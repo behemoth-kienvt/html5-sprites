@@ -1,0 +1,35 @@
+html,
+body {
+  height: 100%;
+  margin: 0;
+  background: #222;
+  color: #ddd;
+  position: relative;
+}
+
+.hint {
+  font-size: 13px;
+  opacity: 0.9;
+  position: absolute;
+  bottom: 10px;
+  left: 0;
+  right: 0;
+  text-align: center;
+}
+
+.info {
+  width: 800px;
+  margin: 6px auto 40px;
+  display: flex;
+  justify-content: space-between;
+  color: #eee;
+}
+
+#game {
+  width: 100vw;
+  height: 100vh;
+  display: block;
+  background: #111;
+  box-shadow: 0 6px 30px rgba(0, 0, 0, 0.6);
+  border-radius: 8px;
+}
