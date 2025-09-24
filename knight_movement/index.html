@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Knight Run with Flip</title>
+    <style>
+      body {
+        margin: 0;
+        background: black;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+      }
+      canvas {
+        border: 2px solid white;
+        background: #222;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="game" width="800" height="300"></canvas>
+
+    <script>
+      const canvas = document.getElementById("game");
+      const ctx = canvas.getContext("2d");
+
+      const knightImg = new Image();
+      knightImg.src = "knight_movement.png";
+
+      const atlas = {
+        knight_idle: { x: 0, y: 0, w: 300, h: 280 },
+        knight_run_1: { x: 300, y: 0, w: 300, h: 280 },
+        knight_run_2: { x: 600, y: 0, w: 300, h: 280 },
+        knight_run_3: { x: 900, y: 0, w: 300, h: 280 },
+      };
+
+      const animations = {
+        idle: ["knight_idle"],
+        run: ["knight_run_1", "knight_run_2", "knight_run_3"],
+      };
+
+      let state = "idle";
+      let frameIndex = 0;
+      let frameTimer = 0;
+      const frameSpeed = 12;
+
+      let x = 50;
+      let direction = 1;
+      const speed = 4;
+
+      const keys = { ArrowRight: false, ArrowLeft: false };
+
+      function drawFrame(frameName, dx, dy, dir) {
+        const f = atlas[frameName];
+
+        ctx.save();
+        if (dir === -1) {
+          ctx.scale(-1, 1);
+          ctx.drawImage(knightImg, f.x, f.y, f.w, f.h, -dx - f.w, dy, f.w, f.h);
+        } else {
+          ctx.drawImage(knightImg, f.x, f.y, f.w, f.h, dx, dy, f.w, f.h);
+        }
+        ctx.restore();
+      }
+
+      function update() {
+        if (keys.ArrowRight) {
+          state = "run";
+          direction = 1;
+          x += speed;
+        } else if (keys.ArrowLeft) {
+          state = "run";
+          direction = -1;
+          x -= speed;
+        } else {
+          state = "idle";
+        }
+
+        if (state === "run") {
+          frameTimer++;
+          if (frameTimer >= frameSpeed) {
+            frameTimer = 0;
+            frameIndex = (frameIndex + 1) % animations.run.length;
+          }
+        } else {
+          frameIndex = 0;
+        }
+
+        if (x > canvas.width) x = -atlas[animations.run[frameIndex]].w;
+        if (x < -atlas[animations.run[frameIndex]].w) x = canvas.width;
+      }
+
+      function render() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const animFrames = animations[state];
+        const currentFrame = animFrames[frameIndex];
+        drawFrame(
+          currentFrame,
+          x,
+          canvas.height - atlas[currentFrame].h,
+          direction
+        );
+      }
+
+      function gameLoop() {
+        update();
+        render();
+        requestAnimationFrame(gameLoop);
+      }
+
+      window.addEventListener("keydown", (e) => {
+        if (e.key in keys) keys[e.key] = true;
+      });
+
+      window.addEventListener("keyup", (e) => {
+        if (e.key in keys) keys[e.key] = false;
+      });
+
+      knightImg.onload = () => {
+        gameLoop();
+      };
+    </script>
+  </body>
+</html>
