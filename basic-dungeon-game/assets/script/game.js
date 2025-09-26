@@ -29,7 +29,7 @@ import {
 import {
   clamp,
   distantBetween,
-  playerSpriteCenterCoordinate,
+  spriteCenterCoordinate,
   worldToScreenCoordinate,
 } from "./helper.js";
 
@@ -149,6 +149,10 @@ const spawnEnemyAwayFromPlayer = () => {
       facingDirectionX: 1,
       facingDirectionY: 0,
       alive: true,
+      spawning: true,
+      spawnTimer: 0,
+      spawnDuration: 0.6,
+      collidable: false,
       animation: {
         typeIndex: ANIMATION_TYPE.STATIC,
         frameIndex: 0,
@@ -170,19 +174,115 @@ const drawEnemy = (enemy) => {
   const sx = enemy.animation.typeIndex * COMMON_SPRITE_WIDTH;
   const sy = enemy.animation.frameIndex * COMMON_SPRITE_HEIGHT;
 
-  const { x, y } = playerSpriteCenterCoordinate(enemy);
+  const { x, y } = spriteCenterCoordinate(enemy);
 
-  gameCtx.drawImage(
-    enemySpriteSheet,
-    sx,
-    sy,
-    COMMON_SPRITE_WIDTH,
-    COMMON_SPRITE_HEIGHT,
-    x,
-    y,
-    COMMON_SPRITE_WIDTH,
-    COMMON_SPRITE_HEIGHT
-  );
+  const centerX = x + COMMON_SPRITE_WIDTH / 2;
+  const centerY = y + COMMON_SPRITE_HEIGHT * 0.82;
+
+  if (enemy.spawning) {
+    // 0..1
+    const spawnProgress = Math.min(1, enemy.spawnTimer / enemy.spawnDuration);
+    const easedOut = Math.sin((spawnProgress * Math.PI) / 2);
+    const spriteScale = easedOut;
+    const spriteAlpha = easedOut;
+
+    // spawn shadow sizing:
+    const baseWidth = COMMON_SPRITE_WIDTH * 0.9;
+    const baseHeight = COMMON_SPRITE_HEIGHT * 0.28;
+    const ellipseWidth = baseWidth * (0.6 + 0.4 * easedOut);
+    const ellipseHeight = baseHeight * (0.4 + 0.6 * easedOut);
+
+    // alpha: core darker, outer fade quicker
+    const coreAlpha = 0.85 * easedOut;
+    const ringAlpha =
+      0.9 * (1 - Math.pow(1 - spawnProgress, 2)) * (1 - 0.25 * spawnProgress);
+
+    // subtle vertical offset so ellipse appears under feet and not clipped by sprite
+    const verticalOffset = COMMON_SPRITE_HEIGHT * 0.02 * (1 - easedOut);
+
+    // draw spawn shadow core
+    gameCtx.save();
+    gameCtx.globalCompositeOperation = "source-over";
+    gameCtx.shadowBlur = 18 * easedOut;
+    gameCtx.shadowColor = `rgba(200, 40, 40, ${0.6 * easedOut})`;
+    gameCtx.globalAlpha = coreAlpha;
+    gameCtx.beginPath();
+    gameCtx.ellipse(
+      centerX,
+      centerY + verticalOffset,
+      ellipseWidth / 2,
+      ellipseHeight / 2,
+      0,
+      0,
+      Math.PI * 2
+    );
+
+    const grad = gameCtx.createRadialGradient(
+      centerX,
+      centerY + verticalOffset,
+      0,
+      centerX,
+      centerY + verticalOffset,
+      ellipseWidth / 2
+    );
+    grad.addColorStop(0, `rgba(140,10,10,${coreAlpha})`);
+    grad.addColorStop(0.6, `rgba(180,30,30,${coreAlpha * 0.7})`);
+    grad.addColorStop(1, `rgba(220,70,70,0)`);
+    gameCtx.fillStyle = grad;
+    gameCtx.fill();
+
+    // draw spawn shadow outer ring
+    gameCtx.globalAlpha = ringAlpha;
+    gameCtx.lineWidth = 2 + 2 * (1 - spawnProgress);
+    gameCtx.strokeStyle = `rgba(255,120,120,${Math.min(0.8, ringAlpha)})`;
+    gameCtx.beginPath();
+    gameCtx.ellipse(
+      centerX,
+      centerY + verticalOffset,
+      (ellipseWidth * 1.05) / 2,
+      (ellipseHeight * 1.05) / 2,
+      0,
+      0,
+      Math.PI * 2
+    );
+    gameCtx.stroke();
+
+    gameCtx.restore();
+
+    // draw the scaled + faded sprite on top of the ellipse
+    gameCtx.save();
+    gameCtx.globalAlpha = spriteAlpha;
+
+    // draw sprite with center-based scaling
+    const drawCenterX = centerX;
+    const drawCenterY = y + COMMON_SPRITE_HEIGHT / 2;
+    gameCtx.translate(drawCenterX, drawCenterY);
+    gameCtx.scale(spriteScale, spriteScale);
+    gameCtx.drawImage(
+      enemySpriteSheet,
+      sx,
+      sy,
+      COMMON_SPRITE_WIDTH,
+      COMMON_SPRITE_HEIGHT,
+      -COMMON_SPRITE_WIDTH / 2,
+      -COMMON_SPRITE_HEIGHT / 2,
+      COMMON_SPRITE_WIDTH,
+      COMMON_SPRITE_HEIGHT
+    );
+    gameCtx.restore();
+  } else {
+    gameCtx.drawImage(
+      enemySpriteSheet,
+      sx,
+      sy,
+      COMMON_SPRITE_WIDTH,
+      COMMON_SPRITE_HEIGHT,
+      x,
+      y,
+      COMMON_SPRITE_WIDTH,
+      COMMON_SPRITE_HEIGHT
+    );
+  }
 };
 
 const drawEnemies = () => {
@@ -195,7 +295,7 @@ const drawPlayer = () => {
   const sx = player.animation.typeIndex * COMMON_SPRITE_WIDTH;
   const sy = player.animation.frameIndex * COMMON_SPRITE_HEIGHT;
 
-  const { x, y } = playerSpriteCenterCoordinate(player);
+  const { x, y } = spriteCenterCoordinate(player);
 
   gameCtx.drawImage(
     playerSpriteSheet,
@@ -216,6 +316,23 @@ const spawnEnemy = (deltaTime) => {
   if (enemySpawnTimer >= ENEMY_SPAWN_INTERVAL) {
     enemySpawnTimer = 0;
     spawnEnemyAwayFromPlayer();
+  }
+};
+
+const updateEnemy = (enemy, deltaTime) => {
+  if (enemy.spawning) {
+    enemy.spawnTimer += deltaTime;
+    if (enemy.spawnTimer >= enemy.spawnDuration) {
+      enemy.spawning = false;
+      enemy.spawnTimer = enemy.spawnDuration;
+      enemy.collidable = true;
+    }
+  }
+};
+
+const updateEnemies = (deltaTime) => {
+  for (const enemy of enemies) {
+    updateEnemy(enemy, deltaTime);
   }
 };
 
@@ -377,6 +494,7 @@ const update = () => {
 
   updateAnimation(deltaTime);
   spawnEnemy(deltaTime);
+  updateEnemies(deltaTime);
   handleMovementInput(deltaTime);
 };
 

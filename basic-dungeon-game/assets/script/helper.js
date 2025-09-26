@@ -15,16 +15,16 @@ const worldToScreenCoordinate = (worldX, worldY, camera) => {
   return { x: worldX - camera.x, y: worldY - camera.y };
 };
 
-const playerSpriteCenterCoordinate = (player) => {
+const spriteCenterCoordinate = (target) => {
   return {
-    x: Math.round(player.x - COMMON_SPRITE_WIDTH / 2),
-    y: Math.round(player.y - COMMON_SPRITE_HEIGHT / 2),
+    x: Math.round(target.x - COMMON_SPRITE_WIDTH / 2),
+    y: Math.round(target.y - COMMON_SPRITE_HEIGHT / 2),
   };
 };
 
 export {
   clamp,
   distantBetween,
-  playerSpriteCenterCoordinate,
+  spriteCenterCoordinate,
   worldToScreenCoordinate,
 };
