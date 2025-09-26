@@ -196,11 +196,11 @@
         lastTime = now;
 
         // spawn
-        // spawnTimer += dt;
-        // if (spawnTimer >= SPAWN_INTERVAL) {
-        //   spawnTimer = 0;
-        //   spawnEnemyAwayFromPlayer();
-        // }
+        spawnTimer += dt;
+        if (spawnTimer >= SPAWN_INTERVAL) {
+          spawnTimer = 0;
+          spawnEnemyAwayFromPlayer();
+        }
 
         // movement input
         let mx = 0,
@@ -338,24 +338,24 @@
         }
 
         // draw enemies
-        // enemies.forEach((e) => {
-        //   // draw sprite from sheet (row 1)
-        //   const sx = e.animFrame * FRAME_W;
-        //   const sy = 1 * FRAME_H;
-        //   ctx.drawImage(
-        //     spriteImg,
-        //     sx,
-        //     sy,
-        //     FRAME_W,
-        //     FRAME_H,
-        //     e.x - FRAME_W / 2,
-        //     e.y - FRAME_H / 2,
-        //     FRAME_W,
-        //     FRAME_H
-        //   );
-        //   // optional debug: hit circle
-        //   // ctx.strokeStyle = '#f003'; ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, Math.PI*2); ctx.stroke();
-        // });
+        enemies.forEach((e) => {
+          // draw sprite from sheet (row 1)
+          const sx = e.animFrame * FRAME_W;
+          const sy = 1 * FRAME_H;
+          ctx.drawImage(
+            spriteImg,
+            sx,
+            sy,
+            FRAME_W,
+            FRAME_H,
+            e.x - FRAME_W / 2,
+            e.y - FRAME_H / 2,
+            FRAME_W,
+            FRAME_H
+          );
+          // optional debug: hit circle
+          // ctx.strokeStyle = '#f003'; ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, Math.PI*2); ctx.stroke();
+        });
 
         // draw player
         const pf = player.animFrame;

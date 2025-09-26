@@ -1,19 +1,23 @@
 import {
   ANIMATION_PHASES,
+  ANIMATION_TYPE,
   COMMON_SPRITE_HEIGHT,
   COMMON_SPRITE_WIDTH,
   DIRECTION_KEYS,
   ENEMY_SPAWN_INTERVAL,
+  ENEMY_SPEED,
+  ENEMY_SPRITE_SHEET_URL,
   FINISH_SPEED_MULTIPLIER,
   FIRST_RETURN_FRAME_INDEX,
   FRAME_DURATION,
   FRAMES_PER_ANIMATION,
+  INIT_ENEMY_COUNT,
   LAST_FRAME_INDEX,
   LAST_LOOPED_FRAME_INDEX,
   MAX_ENEMIES,
   MAX_WORLD_HEIGHT,
   MAX_WORLD_WIDTH,
-  PLAYER_ANIMATION_TYPE,
+  NO_SPAWN_ENEMY_AREA_SIZE,
   PLAYER_ATTACK_COOLDOWN,
   PLAYER_ATTACK_RANGE,
   PLAYER_MAX_HEALTH,
@@ -32,6 +36,7 @@ import {
 const gameCanvas = document.getElementById("game");
 const gameCtx = gameCanvas.getContext("2d");
 
+const enemySpriteSheet = new Image();
 const playerSpriteSheet = new Image();
 const worldBg = new Image();
 
@@ -60,8 +65,9 @@ const player = {
   radius: COMMON_SPRITE_WIDTH / 2, // collision radius
   facingDirectionX: 1, // control by WASD keys
   facingDirectionY: 0, // control by WASD keys
+  alive: true,
   animation: {
-    typeIndex: PLAYER_ANIMATION_TYPE.STATIC,
+    typeIndex: ANIMATION_TYPE.STATIC,
     frameIndex: 0,
     frameTimer: 0,
     playing: false,
@@ -79,6 +85,7 @@ let lastTime = performance.now();
 // offscreen world buffer act as BG (will be created in prepareWorld)
 let worldBuffer = null;
 
+enemySpriteSheet.src = ENEMY_SPRITE_SHEET_URL;
 playerSpriteSheet.src = PLAYER_SPRITE_SHEET_URL;
 worldBg.src = WORLD_BG_URL;
 
@@ -126,6 +133,64 @@ const drawWorldBackground = () => {
   gameCtx.translate(-camera.x, -camera.y);
 };
 
+const spawnEnemyAwayFromPlayer = () => {
+  if (enemies.length >= MAX_ENEMIES) return;
+
+  let tries = 0;
+  while (tries++ < 100) {
+    const x = Math.random() * (worldSize.w - 80) + 40;
+    const y = Math.random() * (worldSize.h - 80) + 40;
+    const distanceFromPlayer = Math.hypot(x - player.x, y - player.y);
+    const enemy = {
+      x: x,
+      y: y,
+      speed: ENEMY_SPEED,
+      radius: COMMON_SPRITE_WIDTH / 2,
+      facingDirectionX: 1,
+      facingDirectionY: 0,
+      alive: true,
+      animation: {
+        typeIndex: ANIMATION_TYPE.STATIC,
+        frameIndex: 0,
+        frameTimer: 0,
+        playing: false,
+        finishing: false,
+        phase: ANIMATION_PHASES.NULL,
+      },
+    };
+
+    if (distanceFromPlayer > NO_SPAWN_ENEMY_AREA_SIZE) {
+      enemies.push(enemy);
+      return;
+    }
+  }
+};
+
+const drawEnemy = (enemy) => {
+  const sx = enemy.animation.typeIndex * COMMON_SPRITE_WIDTH;
+  const sy = enemy.animation.frameIndex * COMMON_SPRITE_HEIGHT;
+
+  const { x, y } = playerSpriteCenterCoordinate(enemy);
+
+  gameCtx.drawImage(
+    enemySpriteSheet,
+    sx,
+    sy,
+    COMMON_SPRITE_WIDTH,
+    COMMON_SPRITE_HEIGHT,
+    x,
+    y,
+    COMMON_SPRITE_WIDTH,
+    COMMON_SPRITE_HEIGHT
+  );
+};
+
+const drawEnemies = () => {
+  enemies.forEach((enemy) => {
+    drawEnemy(enemy);
+  });
+};
+
 const drawPlayer = () => {
   const sx = player.animation.typeIndex * COMMON_SPRITE_WIDTH;
   const sy = player.animation.frameIndex * COMMON_SPRITE_HEIGHT;
@@ -145,7 +210,14 @@ const drawPlayer = () => {
   );
 };
 
-const spawnEnemy = () => {};
+const spawnEnemy = (deltaTime) => {
+  enemySpawnTimer += deltaTime;
+
+  if (enemySpawnTimer >= ENEMY_SPAWN_INTERVAL) {
+    enemySpawnTimer = 0;
+    spawnEnemyAwayFromPlayer();
+  }
+};
 
 const handleDodge = () => {};
 
@@ -232,7 +304,7 @@ const updateAnimation = (deltaTime) => {
           player.animation.playing = false;
           player.animation.finishing = false;
           player.animation.phase = ANIMATION_PHASES.NULL;
-          player.animation.typeIndex = PLAYER_ANIMATION_TYPE.STATIC;
+          player.animation.typeIndex = ANIMATION_TYPE.STATIC;
           player.animation.frameIndex = 0;
           player.animation.frameTimer = 0;
         } else {
@@ -243,7 +315,7 @@ const updateAnimation = (deltaTime) => {
       player.animation.playing = false;
       player.animation.finishing = false;
       player.animation.phase = ANIMATION_PHASES.NULL;
-      player.animation.colIndex = PLAYER_ANIMATION_TYPE.STATIC;
+      player.animation.colIndex = ANIMATION_TYPE.STATIC;
       player.animation.frameIndex = 0;
       player.animation.frameTimer = 0;
     }
@@ -304,7 +376,7 @@ const update = () => {
   lastTime = now;
 
   updateAnimation(deltaTime);
-  spawnEnemy();
+  spawnEnemy(deltaTime);
   handleMovementInput(deltaTime);
 };
 
@@ -314,6 +386,7 @@ const draw = () => {
   gameCtx.clearRect(0, 0, gameCanvasW, gameCanvasH);
 
   drawWorldBackground();
+  drawEnemies();
   drawPlayer();
 
   gameCtx.restore();
@@ -348,6 +421,10 @@ worldBg.onload = () => {
 if (worldBg.complete) {
   loadSpriteSheet();
 }
+
+enemySpriteSheet.onload = () => {
+  for (let i = 0; i < INIT_ENEMY_COUNT; i++) spawnEnemyAwayFromPlayer();
+};
 
 // prevent default context menu on canvas (right-click)
 gameCanvas.addEventListener("contextmenu", (e) => e.preventDefault());
