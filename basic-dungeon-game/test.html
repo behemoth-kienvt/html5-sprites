@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Simple Canvas Action — WASD / Dodge / Attack</title>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: #222;
+        color: #ddd;
+        font-family: system-ui, Segoe UI, Roboto, Helvetica, Arial;
+      }
+      #game {
+        display: block;
+        margin: 18px auto;
+        background: #111;
+        box-shadow: 0 6px 30px rgba(0, 0, 0, 0.6);
+        border-radius: 8px;
+      }
+      .info {
+        width: 800px;
+        margin: 6px auto 40px;
+        display: flex;
+        justify-content: space-between;
+        color: #eee;
+      }
+      .hint {
+        font-size: 13px;
+        opacity: 0.9;
+      }
+      a {
+        color: #7dd;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="game" width="1800" height="1200"></canvas>
+
+    <script>
+      // Single-file HTML canvas game
+      // - World is larger than screen; camera follows player.
+      // - WASD to move. E + WASD to dodge (short dash). F to attack.
+      // - Enemies spawn randomly and stand still. They won't spawn near player.
+      // - Colliding with an enemy => lose 1 health (initial health 4). Health shown top-left. Points top-right.
+      // - Simple sprite-sheet animation is used (inline data-URL SVG). Replace with your own sheet if desired.
+
+      const canvas = document.getElementById("game");
+      const ctx = canvas.getContext("2d");
+      const W = canvas.width,
+        H = canvas.height;
+
+      // -- World
+      const world = { w: 2000, h: 2000 };
+
+      // -- Spritesheet (tiny inline SVG used so the game runs immediately). 32x32 frames.
+      // Row 0: player frames (4 frames). Row 1: enemy frames (2 frames). Replace with your own image if you want.
+      const spriteSVG = `
+<svg xmlns='http://www.w3.org/2000/svg' width='128' height='64'>
+  <rect width='128' height='64' fill='#123' />
+  <!-- player frames -->
+  <g font-family='monospace' font-size='10' fill='white' text-anchor='middle'>
+    <rect x='0' y='0' width='32' height='32' fill='#2d9cdb' rx='6'/>
+    <circle cx='8' cy='8' r='4' fill='#fff'/>
+    <rect x='32' y='0' width='32' height='32' fill='#2d9cdb' rx='6'/>
+    <circle cx='40' cy='8' r='4' fill='#fff'/>
+    <rect x='64' y='0' width='32' height='32' fill='#2d9cdb' rx='6'/>
+    <circle cx='72' cy='8' r='4' fill='#fff'/>
+    <rect x='96' y='0' width='32' height='32' fill='#2d9cdb' rx='6'/>
+    <circle cx='104' cy='8' r='4' fill='#fff'/>
+  </g>
+  <!-- enemy frames (row 1) -->
+  <rect x='0' y='32' width='32' height='32' fill='#c94' rx='6'/>
+  <circle cx='8' cy='40' r='4' fill='#501'/>
+  <rect x='32' y='32' width='32' height='32' fill='#c94' rx='6'/>
+  <circle cx='40' cy='40' r='4' fill='#501'/>
+</svg>
+`;
+
+      const spriteImg = new Image();
+      spriteImg.src =
+        "data:image/svg+xml;utf8," + encodeURIComponent(spriteSVG);
+
+      // Frame sizes
+      const FRAME_W = 32,
+        FRAME_H = 32;
+
+      // -- Player
+      const player = {
+        x: world.w / 2,
+        y: world.h / 2,
+        speed: 160, // px per sec
+        radius: 12,
+        dirX: 1,
+        dirY: 0, // facing
+        animFrame: 0,
+        animTime: 0,
+        health: 4,
+        maxHealth: 4,
+        score: 0,
+        invulnerable: 0, // seconds
+        isDashing: false,
+        dashTimer: 0,
+        dashDuration: 0.22,
+        dashSpeedMul: 4,
+      };
+
+      // -- Enemies
+      let enemies = [];
+      const MAX_ENEMIES = 20;
+      let spawnTimer = 0;
+      const SPAWN_INTERVAL = 1.2; // seconds
+
+      // Keyboard handling
+      const keys = {};
+      window.addEventListener("keydown", (e) => {
+        keys[e.key.toLowerCase()] = true;
+        e.preventDefault();
+      });
+      window.addEventListener("keyup", (e) => {
+        keys[e.key.toLowerCase()] = false;
+        e.preventDefault();
+      });
+
+      // Helper
+      function clamp(v, a, b) {
+        return Math.max(a, Math.min(b, v));
+      }
+      function dist(a, b) {
+        const dx = a.x - b.x,
+          dy = a.y - b.y;
+        return Math.hypot(dx, dy);
+      }
+
+      function spawnEnemyAwayFromPlayer() {
+        if (enemies.length >= MAX_ENEMIES) return;
+        let tries = 0;
+        while (tries++ < 200) {
+          const x = Math.random() * (world.w - 80) + 40;
+          const y = Math.random() * (world.h - 80) + 40;
+          const d = Math.hypot(x - player.x, y - player.y);
+          if (d > 220) {
+            // don't spawn near player
+            enemies.push({
+              x,
+              y,
+              r: 14,
+              alive: true,
+              animFrame: 0,
+              animTime: 0,
+            });
+            return;
+          }
+        }
+      }
+
+      function worldToScreen(wx, wy, cam) {
+        return { x: wx - cam.x, y: wy - cam.y };
+      }
+
+      // Attack handling
+      // let lastAttackTime = 0;
+      // const ATTACK_COOLDOWN = 0.35;
+      // const ATTACK_RANGE = 36;
+
+      // function performAttack() {
+      //   const now = performance.now() / 1000;
+      //   if (now - lastAttackTime < ATTACK_COOLDOWN) return;
+      //   lastAttackTime = now;
+
+      //   // compute attack point in facing direction
+      //   const fx = player.x + player.dirX * (player.radius + ATTACK_RANGE);
+      //   const fy = player.y + player.dirY * (player.radius + ATTACK_RANGE);
+
+      //   // check enemies in range
+      //   for (let i = enemies.length - 1; i >= 0; i--) {
+      //     const e = enemies[i];
+      //     if (!e.alive) continue;
+      //     const d = Math.hypot(e.x - fx, e.y - fy);
+      //     if (d <= ATTACK_RANGE + e.r) {
+      //       // hit!
+      //       enemies.splice(i, 1);
+      //       player.score += 1;
+      //     }
+      //   }
+      // }
+
+      // Update
+      let lastTime = performance.now();
+      function update() {
+        const now = performance.now();
+        let dt = (now - lastTime) / 1000;
+        if (dt > 0.05) dt = 0.05;
+        lastTime = now;
+
+        // spawn
+        // spawnTimer += dt;
+        // if (spawnTimer >= SPAWN_INTERVAL) {
+        //   spawnTimer = 0;
+        //   spawnEnemyAwayFromPlayer();
+        // }
+
+        // movement input
+        let mx = 0,
+          my = 0;
+        if (keys["w"]) my -= 1;
+        if (keys["s"]) my += 1;
+        if (keys["a"]) mx -= 1;
+        if (keys["d"]) mx += 1;
+
+        const moving = mx !== 0 || my !== 0;
+        if (moving) {
+          const len = Math.hypot(mx, my) || 1;
+          mx /= len;
+          my /= len;
+          player.dirX = mx;
+          player.dirY = my;
+        }
+
+        // dodge: E + direction keys
+        // if (keys["e"] && !player.isDashing) {
+        //   // choose dash direction using WASD; if none, dash in facing direction
+        //   let dx = 0,
+        //     dy = 0;
+        //   if (keys["w"]) dy -= 1;
+        //   if (keys["s"]) dy += 1;
+        //   if (keys["a"]) dx -= 1;
+        //   if (keys["d"]) dx += 1;
+        //   if (dx === 0 && dy === 0) {
+        //     dx = player.dirX;
+        //     dy = player.dirY;
+        //   }
+        //   const len = Math.hypot(dx, dy) || 1;
+        //   dx /= len;
+        //   dy /= len;
+        //   player.isDashing = true;
+        //   player.dashTimer = player.dashDuration;
+        //   player.dashDirX = dx;
+        //   player.dashDirY = dy;
+        //   player.invulnerable = player.dashDuration + 0.05; // brief invuln
+        // }
+
+        // handle dash
+        if (player.isDashing) {
+          // const dashVel = player.speed * player.dashSpeedMul;
+          // player.x += player.dashDirX * dashVel * dt;
+          // player.y += player.dashDirY * dashVel * dt;
+          // player.dashTimer -= dt;
+          // if (player.dashTimer <= 0) {
+          //   player.isDashing = false;
+          // }
+        } else {
+          // normal move
+          const speed = player.speed;
+          player.x += mx * speed * dt;
+          player.y += my * speed * dt;
+        }
+
+        // clamp to world
+        player.x = clamp(player.x, 10, world.w - 10);
+        player.y = clamp(player.y, 10, world.h - 10);
+
+        // invul timer
+        if (player.invulnerable > 0)
+          player.invulnerable = Math.max(0, player.invulnerable - dt);
+
+        // attack key
+        // if (keys["f"]) {
+        //   performAttack();
+        // }
+
+        // enemy collision
+        // for (let i = enemies.length - 1; i >= 0; i--) {
+        //   const e = enemies[i];
+        //   const d = Math.hypot(player.x - e.x, player.y - e.y);
+        //   if (d <= player.radius + e.r) {
+        //     if (player.invulnerable <= 0) {
+        //       player.health -= 1;
+        //       player.invulnerable = 0.9;
+        //       if (player.health <= 0) {
+        //         // reset player but keep score
+        //         player.health = player.maxHealth;
+        //         player.x = world.w / 2;
+        //         player.y = world.h / 2;
+        //         enemies = [];
+        //       }
+        //     }
+        //   }
+        // }
+
+        // update animations
+        if (moving) player.animTime += dt;
+        else player.animTime = 0;
+        if (player.animTime > 0.12) {
+          player.animFrame = (player.animFrame + 1) % 4;
+          player.animTime = 0;
+        }
+
+        // enemies.forEach((e) => {
+        //   e.animTime += dt;
+        //   if (e.animTime > 0.4) {
+        //     e.animFrame = (e.animFrame + 1) % 2;
+        //     e.animTime = 0;
+        //   }
+        // });
+      }
+
+      function draw() {
+        // camera centered on player
+        const cam = {
+          x: clamp(player.x - W / 2, 0, world.w - W),
+          y: clamp(player.y - H / 2, 0, world.h - H),
+        };
+
+        // clear
+        ctx.fillStyle = "#0b0b0b";
+        ctx.fillRect(0, 0, W, H);
+
+        // draw grid background
+        ctx.save();
+        ctx.translate(-cam.x, -cam.y);
+        const gridSize = 64;
+        ctx.strokeStyle = "#111";
+        ctx.lineWidth = 1;
+        for (let gx = 0; gx < world.w; gx += gridSize) {
+          ctx.beginPath();
+          ctx.moveTo(gx, 0);
+          ctx.lineTo(gx, world.h);
+          ctx.stroke();
+        }
+        for (let gy = 0; gy < world.h; gy += gridSize) {
+          ctx.beginPath();
+          ctx.moveTo(0, gy);
+          ctx.lineTo(world.w, gy);
+          ctx.stroke();
+        }
+
+        // draw enemies
+        // enemies.forEach((e) => {
+        //   // draw sprite from sheet (row 1)
+        //   const sx = e.animFrame * FRAME_W;
+        //   const sy = 1 * FRAME_H;
+        //   ctx.drawImage(
+        //     spriteImg,
+        //     sx,
+        //     sy,
+        //     FRAME_W,
+        //     FRAME_H,
+        //     e.x - FRAME_W / 2,
+        //     e.y - FRAME_H / 2,
+        //     FRAME_W,
+        //     FRAME_H
+        //   );
+        //   // optional debug: hit circle
+        //   // ctx.strokeStyle = '#f003'; ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, Math.PI*2); ctx.stroke();
+        // });
+
+        // draw player
+        const pf = player.animFrame;
+        const pry = 0;
+        ctx.drawImage(
+          spriteImg,
+          pf * FRAME_W,
+          pry * FRAME_H,
+          FRAME_W,
+          FRAME_H,
+          player.x - FRAME_W / 2,
+          player.y - FRAME_H / 2,
+          FRAME_W,
+          FRAME_H
+        );
+
+        // draw attack arc if attacked recently
+        // const now = performance.now() / 1000;
+        // if (now - lastAttackTime < 0.12) {
+        //   const fx = player.x + player.dirX * (player.radius + ATTACK_RANGE);
+        //   const fy = player.y + player.dirY * (player.radius + ATTACK_RANGE);
+        //   ctx.fillStyle = "rgba(255,200,60,0.6)";
+        //   ctx.beginPath();
+        //   ctx.arc(fx, fy, ATTACK_RANGE, 0, Math.PI * 2);
+        //   ctx.fill();
+        // }
+
+        // damage flash
+        // if (
+        //   player.invulnerable > 0 &&
+        //   Math.floor(player.invulnerable * 8) % 2 === 0
+        // ) {
+        //   ctx.fillStyle = "rgba(255,255,255,0.06)";
+        //   ctx.fillRect(
+        //     player.x - FRAME_W / 2,
+        //     player.y - FRAME_H / 2,
+        //     FRAME_W,
+        //     FRAME_H
+        //   );
+        // }
+
+        ctx.restore();
+
+        // UI: health top-left
+        // ctx.fillStyle = "#111";
+        // ctx.fillRect(10, 10, 130, 36);
+        // ctx.strokeStyle = "#444";
+        // ctx.strokeRect(10, 10, 130, 36);
+        // ctx.fillStyle = "#fff";
+        // ctx.font = "16px sans-serif";
+        // ctx.textBaseline = "middle";
+        // ctx.fillText(
+        //   "Health: " + player.health + " / " + player.maxHealth,
+        //   20,
+        //   28
+        // );
+
+        // UI: score top-right
+        // const scoreText = "Score: " + player.score;
+        // const tw = ctx.measureText(scoreText).width;
+        // ctx.fillStyle = "#111";
+        // ctx.fillRect(W - tw - 30, 10, tw + 20, 36);
+        // ctx.strokeStyle = "#444";
+        // ctx.strokeRect(W - tw - 30, 10, tw + 20, 36);
+        // ctx.fillStyle = "#fff";
+        // ctx.fillText(scoreText, W - tw - 20, 28);
+
+        // optional: mini-map / debug
+      }
+
+      function loop() {
+        update();
+        draw();
+        requestAnimationFrame(loop);
+      }
+
+      // spawn a few initial enemies
+      for (let i = 0; i < 6; i++) spawnEnemyAwayFromPlayer();
+
+      // start
+      spriteImg.onload = () => {
+        lastTime = performance.now();
+        loop();
+      };
+
+      // simple touch / click to attack for testing with mouse (optional)
+      canvas.addEventListener("mousedown", (e) => {
+        performAttack();
+      });
+
+      // Prevent arrow keys from scrolling
+      window.addEventListener("keydown", (e) => {
+        if (
+          ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(
+            e.key
+          )
+        )
+          e.preventDefault();
+      });
+    </script>
+  </body>
+</html>
