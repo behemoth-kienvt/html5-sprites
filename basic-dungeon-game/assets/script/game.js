@@ -1,12 +1,15 @@
 import {
+  ANIMATION_PHASES,
   COMMON_SPRITE_HEIGHT,
   COMMON_SPRITE_WIDTH,
   DIRECTION_KEYS,
   ENEMY_SPAWN_INTERVAL,
   FINISH_SPEED_MULTIPLIER,
+  FIRST_RETURN_FRAME_INDEX,
   FRAME_DURATION,
   FRAMES_PER_ANIMATION,
   LAST_FRAME_INDEX,
+  LAST_LOOPED_FRAME_INDEX,
   MAX_ENEMIES,
   MAX_WORLD_HEIGHT,
   MAX_WORLD_WIDTH,
@@ -63,6 +66,7 @@ const player = {
     frameTimer: 0,
     playing: false,
     finishing: false,
+    phase: ANIMATION_PHASES.NULL,
   },
 };
 
@@ -178,21 +182,40 @@ const updateAnimation = (deltaTime) => {
       player.animation.frameTimer = 0;
       player.animation.playing = true;
       player.animation.finishing = false;
+      player.animation.phase = ANIMATION_PHASES.STARTUP;
     }
 
     player.animation.frameTimer += deltaTime;
     if (player.animation.frameTimer >= FRAME_DURATION) {
       player.animation.frameTimer -= FRAME_DURATION;
-      player.animation.frameIndex += 1;
 
-      if (player.animation.frameIndex > LAST_FRAME_INDEX) {
-        player.animation.frameIndex = 0;
+      if (player.animation.phase === ANIMATION_PHASES.STARTUP) {
+        if (player.animation.frameIndex < LAST_LOOPED_FRAME_INDEX) {
+          player.animation.frameIndex += 1;
+        } else if (player.animation.frameIndex === LAST_LOOPED_FRAME_INDEX) {
+          player.animation.phase = ANIMATION_PHASES.LOOP;
+          player.animation.frameIndex = 1;
+        }
+      } else if (player.animation.phase === ANIMATION_PHASES.LOOP) {
+        if (player.animation.frameIndex < LAST_LOOPED_FRAME_INDEX) {
+          player.animation.frameIndex += 1;
+        } else {
+          player.animation.frameIndex = 1;
+        }
+      } else {
+        player.animation.frameIndex = Math.min(
+          player.animation.frameIndex + 1,
+          LAST_FRAME_INDEX
+        );
       }
     }
   } else {
     if (player.animation.playing && !player.animation.finishing) {
       // complete remaining frames at faster speed
       player.animation.finishing = true;
+      player.animation.frameIndex = FIRST_RETURN_FRAME_INDEX;
+      player.animation.frameTimer = 0;
+      player.animation.phase = ANIMATION_PHASES.NULL;
     }
 
     if (player.animation.playing && player.animation.finishing) {
@@ -203,19 +226,23 @@ const updateAnimation = (deltaTime) => {
       if (player.animation.frameTimer >= fastFrameDuration) {
         player.animation.frameTimer -= fastFrameDuration;
 
-        if (player.animation.frameIndex < LAST_FRAME_INDEX) {
-          player.animation.frameIndex += 1;
-        } else {
+        if (player.animation.frameIndex === FIRST_RETURN_FRAME_INDEX) {
+          player.animation.frameIndex = LAST_FRAME_INDEX;
+        } else if (player.animation.frameIndex === LAST_FRAME_INDEX) {
           player.animation.playing = false;
           player.animation.finishing = false;
+          player.animation.phase = ANIMATION_PHASES.NULL;
           player.animation.typeIndex = PLAYER_ANIMATION_TYPE.STATIC;
           player.animation.frameIndex = 0;
           player.animation.frameTimer = 0;
+        } else {
+          player.animation.frameIndex = LAST_FRAME_INDEX;
         }
       }
     } else {
       player.animation.playing = false;
       player.animation.finishing = false;
+      player.animation.phase = ANIMATION_PHASES.NULL;
       player.animation.colIndex = PLAYER_ANIMATION_TYPE.STATIC;
       player.animation.frameIndex = 0;
       player.animation.frameTimer = 0;
