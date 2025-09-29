@@ -85,10 +85,12 @@ const player = {
   health: PLAYER_INIT_HEALTH,
   maxHealth: PLAYER_MAX_HEALTH,
   lastDirectionKey: null,
-  attackCooldown: 0,
-  attacking: false,
-  attackTimer: 0,
-  attackHitRegisteredThisSwing: false,
+  attack: {
+    cooldown: 0,
+    attacking: false,
+    timer: 0,
+    hitRegisteredThisSwing: false,
+  },
   healthBarGradient: {
     startColor: "rgba(155,255,90,1)",
     endColor: "rgba(100,255,30,1)",
@@ -588,7 +590,7 @@ const getCardinalFromFacing = (fx, fy) => {
 };
 
 const startPlayerAttack = (directionKey) => {
-  if (player.attacking) return;
+  if (player.attack.attacking) return;
 
   let directionKeyToUse = null;
 
@@ -616,10 +618,10 @@ const startPlayerAttack = (directionKey) => {
     player.animation.typeIndex = ANIMATION_TYPE.ATTACK_RIGHT;
   }
 
-  player.attacking = true;
-  player.attackTimer = 0;
-  player.attackHitRegisteredThisSwing = false;
-  player.attackCooldown = PLAYER_ATTACK_COOLDOWN;
+  player.attack.attacking = true;
+  player.attack.timer = 0;
+  player.attack.hitRegisteredThisSwing = false;
+  player.attack.cooldown = PLAYER_ATTACK_COOLDOWN;
 
   player.animation.frameIndex = 0;
   player.animation.frameTimer = 0;
@@ -629,7 +631,7 @@ const startPlayerAttack = (directionKey) => {
 };
 
 const handleAttack = () => {
-  if (keys["f"] && player.attackCooldown <= 0 && !player.attacking) {
+  if (keys["f"] && player.attack.cooldown <= 0 && !player.attack.attacking) {
     const pressedDirs = DIRECTION_KEYS.filter((k) => keys[k]);
     const singleDirectionKey = pressedDirs.length === 1 ? pressedDirs[0] : null;
 
@@ -638,31 +640,31 @@ const handleAttack = () => {
 };
 
 const updateAttack = (deltaTime) => {
-  if (player.attackCooldown > 0)
-    player.attackCooldown = Math.max(0, player.attackCooldown - deltaTime);
+  if (player.attack.cooldown > 0)
+    player.attack.cooldown = Math.max(0, player.attack.cooldown - deltaTime);
 
-  if (!player.attacking) return;
+  if (!player.attack.attacking) return;
 
-  player.attackTimer += deltaTime;
-  if (player.attackTimer >= FRAME_DURATION) {
-    player.attackTimer -= FRAME_DURATION;
+  player.attack.timer += deltaTime;
+  if (player.attack.timer >= FRAME_DURATION) {
+    player.attack.timer -= FRAME_DURATION;
     player.animation.frameIndex += 1;
 
     if (player.animation.frameIndex > LAST_FRAME_INDEX) {
-      player.attacking = false;
+      player.attack.attacking = false;
       player.animation.playing = false;
       player.animation.finishing = false;
       player.animation.phase = ANIMATION_PHASES.NULL;
       player.animation.typeIndex = ANIMATION_TYPE.STATIC;
       player.animation.frameIndex = 0;
       player.animation.frameTimer = 0;
-      player.attackHitRegisteredThisSwing = false;
+      player.attack.hitRegisteredThisSwing = false;
       return;
     }
   }
 
   if (
-    !player.attackHitRegisteredThisSwing &&
+    !player.attack.hitRegisteredThisSwing &&
     player.animation.frameIndex === PLAYER_ATTACK_FRAME
   ) {
     const attackDirX = player.facingDirectionX;
@@ -747,7 +749,7 @@ const updateAttack = (deltaTime) => {
       }
     }
 
-    player.attackHitRegisteredThisSwing = true;
+    player.attack.hitRegisteredThisSwing = true;
   }
 };
 
@@ -786,7 +788,7 @@ const handleDash = (movementX, movementY, deltaTime) => {
 };
 
 const updateAnimation = (deltaTime) => {
-  if (player.attacking) return;
+  if (player.attack.attacking) return;
 
   const pressedDirs = DIRECTION_KEYS.filter((k) => keys[k]);
   const singleDirectionKey = pressedDirs.length === 1 ? pressedDirs[0] : null;
@@ -874,7 +876,7 @@ const updateAnimation = (deltaTime) => {
 };
 
 const handleMovementInput = (deltaTime) => {
-  if (player.attacking) {
+  if (player.attack.attacking) {
     handleAttack();
     handleEnemyCollision(deltaTime);
     return;
