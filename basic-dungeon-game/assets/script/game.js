@@ -18,7 +18,9 @@ import {
   HEALTH_BAR_RADIOS,
   HEALTH_BAR_SEGMENT_GAP,
   HEALTH_BAR_WIDTH,
+  HIT_SCORE,
   INIT_ENEMY_COUNT,
+  KILL_SCORE,
   LAST_FRAME_INDEX,
   LAST_LOOPED_FRAME_INDEX,
   MAX_ENEMIES,
@@ -26,6 +28,7 @@ import {
   MAX_WORLD_WIDTH,
   NO_SPAWN_ENEMY_AREA_SIZE,
   PLAYER_ATTACK_COOLDOWN,
+  PLAYER_ATTACK_FRAME,
   PLAYER_ATTACK_RANGE,
   PLAYER_COLLISION_RADIUS,
   PLAYER_INIT_HEALTH,
@@ -81,6 +84,10 @@ const player = {
   alive: true,
   health: PLAYER_INIT_HEALTH,
   maxHealth: PLAYER_MAX_HEALTH,
+  attackCooldown: 0,
+  attacking: false,
+  attackTimer: 0,
+  attackHitRegisteredThisSwing: false,
   healthBarGradient: {
     startColor: "rgba(155,255,90,1)",
     endColor: "rgba(100,255,30,1)",
@@ -175,6 +182,8 @@ const spawnEnemyAwayFromPlayer = () => {
       collidable: false,
       health: ENEMY_INIT_HEALTH,
       maxHealth: ENEMY_MAX_HEALTH,
+      dying: false,
+      respawnTimer: 0,
       healthBarGradient: {
         startColor: "rgba(255,90,90,1)",
         endColor: "rgba(200,30,30,1)",
@@ -329,14 +338,19 @@ const drawEnemy = (enemy) => {
   const centerX = x + COMMON_SPRITE_WIDTH / 2;
   const centerY = y + COMMON_SPRITE_HEIGHT * 0.82;
 
+  // determine sprite scale/alpha depending on spawning/dying
+  let spriteScale = 1;
+  let spriteAlpha = 1;
+  let drawTransformed = false;
+
   if (enemy.spawning) {
-    // 0..1
     const spawnProgress = Math.min(1, enemy.spawnTimer / enemy.spawnDuration);
     const easedOut = Math.sin((spawnProgress * Math.PI) / 2);
-    const spriteScale = easedOut;
-    const spriteAlpha = easedOut;
+    spriteScale = easedOut;
+    spriteAlpha = easedOut;
+    drawTransformed = true;
 
-    // spawn shadow sizing:
+    // draw spawn shadow
     const baseWidth = COMMON_SPRITE_WIDTH * 0.9;
     const baseHeight = COMMON_SPRITE_HEIGHT * 0.28;
     const ellipseWidth = baseWidth * (0.6 + 0.4 * easedOut);
@@ -396,15 +410,43 @@ const drawEnemy = (enemy) => {
       Math.PI * 2
     );
     gameCtx.stroke();
-
     gameCtx.restore();
+  } else if (enemy.dying) {
+    const progress = Math.max(0, enemy.respawnTimer / enemy.spawnDuration);
+    const eased = Math.sin((progress * Math.PI) / 2);
+    spriteScale = eased;
+    spriteAlpha = eased;
+    drawTransformed = true;
 
-    // draw the scaled + faded sprite on top of the ellipse
+    // draw shrink shadow (fade out)
+    const baseWidth = COMMON_SPRITE_WIDTH * 0.9;
+    const baseHeight = COMMON_SPRITE_HEIGHT * 0.28;
+    const ellipseWidth = baseWidth * (0.6 + 0.4 * eased);
+    const ellipseHeight = baseHeight * (0.4 + 0.6 * eased);
+
+    gameCtx.save();
+    gameCtx.globalAlpha = 0.65 * eased;
+    gameCtx.beginPath();
+    gameCtx.ellipse(
+      centerX,
+      centerY,
+      ellipseWidth / 2,
+      ellipseHeight / 2,
+      0,
+      0,
+      Math.PI * 2
+    );
+    gameCtx.fillStyle = `rgba(120,20,20,${0.6 * eased})`;
+    gameCtx.fill();
+    gameCtx.restore();
+  }
+
+  // draw sprite (transformed when spawning/dying so health bar scales correctly)
+  if (drawTransformed) {
     gameCtx.save();
     gameCtx.globalAlpha = spriteAlpha;
 
-    // draw sprite with center-based scaling
-    const drawCenterX = centerX;
+    const drawCenterX = x + COMMON_SPRITE_WIDTH / 2;
     const drawCenterY = y + COMMON_SPRITE_HEIGHT / 2;
     gameCtx.translate(drawCenterX, drawCenterY);
     gameCtx.scale(spriteScale, spriteScale);
@@ -419,6 +461,7 @@ const drawEnemy = (enemy) => {
       COMMON_SPRITE_WIDTH,
       COMMON_SPRITE_HEIGHT
     );
+
     drawHealthBar(
       gameCtx,
       -COMMON_SPRITE_WIDTH / 2,
@@ -429,6 +472,7 @@ const drawEnemy = (enemy) => {
       enemy.healthBarGradient,
       enemy.invulnerable
     );
+
     gameCtx.restore();
   } else {
     gameCtx.drawImage(
@@ -442,6 +486,7 @@ const drawEnemy = (enemy) => {
       COMMON_SPRITE_WIDTH,
       COMMON_SPRITE_HEIGHT
     );
+
     drawHealthBar(
       gameCtx,
       x,
@@ -501,6 +546,10 @@ const spawnEnemy = (deltaTime) => {
 };
 
 const updateEnemy = (enemy, deltaTime) => {
+  if (enemy.invulnerable > 0) {
+    enemy.invulnerable = Math.max(0, enemy.invulnerable - deltaTime);
+  }
+
   if (enemy.spawning) {
     enemy.spawnTimer += deltaTime;
     if (enemy.spawnTimer >= enemy.spawnDuration) {
@@ -509,17 +558,135 @@ const updateEnemy = (enemy, deltaTime) => {
       enemy.collidable = true;
     }
   }
+
+  if (enemy.dying) {
+    enemy.respawnTimer = Math.max(0, enemy.respawnTimer - deltaTime);
+  }
 };
 
 const updateEnemies = (deltaTime) => {
-  for (const enemy of enemies) {
+  for (let i = enemies.length - 1; i >= 0; i--) {
+    const enemy = enemies[i];
     updateEnemy(enemy, deltaTime);
+
+    if (enemy.dying && enemy.respawnTimer <= 0) {
+      enemies.splice(i, 1);
+    }
   }
 };
 
 const handleDodge = () => {};
 
-const handleAttack = () => {};
+const startPlayerAttack = (directionKey) => {
+  if (player.attacking) return;
+
+  player.attacking = true;
+  player.attackTimer = 0;
+  player.attackHitRegisteredThisSwing = false;
+  player.attackCooldown = PLAYER_ATTACK_COOLDOWN;
+
+  if (directionKey) {
+    const dirMap = { w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0] };
+    const dir = dirMap[directionKey];
+    if (dir) {
+      player.facingDirectionX = dir[0];
+      player.facingDirectionY = dir[1];
+    }
+  }
+
+  player.animation.typeIndex = ANIMATION_TYPE.ATTACK;
+  player.animation.frameIndex = 0;
+  player.animation.frameTimer = 0;
+  player.animation.playing = true;
+  player.animation.finishing = false;
+  player.animation.phase = ANIMATION_PHASES.STARTUP;
+};
+
+const handleAttack = () => {
+  const pressedDirs = DIRECTION_KEYS.filter((k) => keys[k]);
+  const singleDirectionKey = pressedDirs.length === 1 ? pressedDirs[0] : null;
+
+  if (
+    keys["f"] &&
+    player.attackCooldown <= 0 &&
+    !player.attacking &&
+    singleDirectionKey
+  ) {
+    startPlayerAttack(singleDirectionKey);
+  }
+};
+
+const updateAttack = (deltaTime) => {
+  if (player.attackCooldown > 0)
+    player.attackCooldown = Math.max(0, player.attackCooldown - deltaTime);
+
+  if (!player.attacking) return;
+
+  player.attackTimer += deltaTime;
+  if (player.attackTimer >= FRAME_DURATION) {
+    player.attackTimer -= FRAME_DURATION;
+    player.animation.frameIndex += 1;
+
+    if (player.animation.frameIndex > LAST_FRAME_INDEX) {
+      player.attacking = false;
+      player.animation.playing = false;
+      player.animation.finishing = false;
+      player.animation.phase = ANIMATION_PHASES.NULL;
+      player.animation.typeIndex = ANIMATION_TYPE.STATIC;
+      player.animation.frameIndex = 0;
+      player.animation.frameTimer = 0;
+      player.attackHitRegisteredThisSwing = false;
+      return;
+    }
+  }
+
+  if (
+    !player.attackHitRegisteredThisSwing &&
+    player.animation.frameIndex === PLAYER_ATTACK_FRAME
+  ) {
+    const attackDirX = player.facingDirectionX;
+    const attackDirY = player.facingDirectionY;
+
+    for (const enemy of enemies) {
+      if (!enemy.collidable || enemy.dying) continue;
+      if (enemy.invulnerable > 0) continue;
+
+      const ex = enemy.x + COMMON_SPRITE_WIDTH / 2;
+      const ey = enemy.y + COMMON_SPRITE_HEIGHT / 2;
+      const px = player.x + COMMON_SPRITE_WIDTH / 2;
+      const py = player.y + COMMON_SPRITE_HEIGHT / 2;
+
+      const dx = ex - px;
+      const dy = ey - py;
+      const dist = Math.hypot(dx, dy);
+      if (dist > PLAYER_ATTACK_RANGE) continue;
+
+      // check forward cone using dot product
+      const nx = dist > 0 ? dx / dist : 0;
+      const ny = dist > 0 ? dy / dist : 0;
+      const dot = nx * attackDirX + ny * attackDirY; // 1 = forward, -1 = back
+
+      // allow moderate cone (~60deg). dot > 0.5
+      if (dot > 0.5) {
+        enemy.health -= 1;
+        enemy.invulnerable = 1.0;
+
+        player.score += HIT_SCORE;
+
+        if (enemy.health <= 0) {
+          enemy.dying = true;
+          enemy.respawnTimer = enemy.spawnDuration;
+          enemy.collidable = false;
+          enemy.invulnerable = 1.0;
+
+          player.score += KILL_SCORE;
+        }
+      }
+    }
+
+    player.attackHitRegisteredThisSwing = true;
+  }
+};
 
 const handleEnemyCollision = (deltaTime) => {
   if (player.invulnerable > 0)
@@ -556,6 +723,8 @@ const handleDash = (movementX, movementY, deltaTime) => {
 };
 
 const updateAnimation = (deltaTime) => {
+  if (player.attacking) return;
+
   const pressedDirs = DIRECTION_KEYS.filter((k) => keys[k]);
   const singleDirectionKey = pressedDirs.length === 1 ? pressedDirs[0] : null;
 
@@ -697,6 +866,7 @@ const update = () => {
   updateAnimation(deltaTime);
   spawnEnemy(deltaTime);
   updateEnemies(deltaTime);
+  updateAttack(deltaTime);
   handleMovementInput(deltaTime);
 };
 

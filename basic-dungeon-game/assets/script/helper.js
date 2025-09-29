@@ -4,11 +4,17 @@ const clamp = (v, a, b) => {
   return Math.max(a, Math.min(b, v));
 };
 
-const distantBetween = (a, b) => {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
+const subtractPosition = (a, b) => {
+  return {
+    x: a.x - b.x,
+    y: a.y - b.y,
+  };
+};
 
-  return Math.hypot(dx, dy);
+const distantBetween = (a, b) => {
+  const { x, y } = subtractPosition(a, b);
+
+  return Math.hypot(x, y);
 };
 
 const worldToScreenCoordinate = (worldX, worldY, camera) => {
@@ -39,5 +45,6 @@ export {
   distantBetween,
   roundRect,
   spriteCenterCoordinate,
+  subtractPosition,
   worldToScreenCoordinate,
 };
