@@ -44,8 +44,8 @@ const ANIMATION_TYPE = {
   MOVE_UP: 2,
   MOVE_DOWN: 3,
   MOVE_RIGHT: 4,
-  ATTACK: 5,
-  DIE: 6,
+  ATTACK_RIGHT: 5,
+  ATTACK_LEFT: 6,
 };
 
 const DIRECTION_KEYS = ["a", "w", "s", "d"];

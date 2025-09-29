@@ -610,12 +610,17 @@ const startPlayerAttack = (directionKey) => {
   player.facingDirectionX = direction[0];
   player.facingDirectionY = direction[1];
 
+  if (directionKeyToUse === "a") {
+    player.animation.typeIndex = ANIMATION_TYPE.ATTACK_LEFT;
+  } else {
+    player.animation.typeIndex = ANIMATION_TYPE.ATTACK_RIGHT;
+  }
+
   player.attacking = true;
   player.attackTimer = 0;
   player.attackHitRegisteredThisSwing = false;
   player.attackCooldown = PLAYER_ATTACK_COOLDOWN;
 
-  player.animation.typeIndex = ANIMATION_TYPE.ATTACK;
   player.animation.frameIndex = 0;
   player.animation.frameTimer = 0;
   player.animation.playing = true;
