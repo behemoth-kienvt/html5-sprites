@@ -17,13 +17,13 @@ const WORLD_BG_URL = "assets/images/world-tiles.png";
 
 const PLAYER_ATTACK_COOLDOWN = 0.35;
 const PLAYER_ATTACK_RANGE = 36;
-const PLAYER_INIT_HEALTH = 2;
+const PLAYER_INIT_HEALTH = 5;
 const PLAYER_MAX_HEALTH = 5;
 const PLAYER_SPEED = 100;
 
 const HEALTH_BAR_HEIGHT = 6;
-const HEALTH_BAR_RADIOS = 4;
-const HEALTH_BAR_SEGMENT_GAP = 1;
+const HEALTH_BAR_RADIOS = 3;
+const HEALTH_BAR_SEGMENT_GAP = 0;
 const HEALTH_BAR_WIDTH = 78;
 
 const ENEMY_INIT_HEALTH = 8;

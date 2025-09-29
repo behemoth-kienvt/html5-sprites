@@ -414,14 +414,14 @@
         );
 
         // UI: score top-right
-        // const scoreText = "Score: " + player.score;
-        // const tw = ctx.measureText(scoreText).width;
-        // ctx.fillStyle = "#111";
-        // ctx.fillRect(W - tw - 30, 10, tw + 20, 36);
-        // ctx.strokeStyle = "#444";
-        // ctx.strokeRect(W - tw - 30, 10, tw + 20, 36);
-        // ctx.fillStyle = "#fff";
-        // ctx.fillText(scoreText, W - tw - 20, 28);
+        const scoreText = "Score: " + player.score;
+        const tw = ctx.measureText(scoreText).width;
+        ctx.fillStyle = "#111";
+        ctx.fillRect(W - tw - 30, 10, tw + 20, 36);
+        ctx.strokeStyle = "#444";
+        ctx.strokeRect(W - tw - 30, 10, tw + 20, 36);
+        ctx.fillStyle = "#fff";
+        ctx.fillText(scoreText, W - tw - 20, 28);
 
         // optional: mini-map / debug
       }

@@ -73,6 +73,7 @@ const player = {
   radius: COMMON_SPRITE_WIDTH / 2, // collision radius
   facingDirectionX: 1, // control by WASD keys
   facingDirectionY: 0, // control by WASD keys
+  score: 0,
   alive: true,
   health: PLAYER_INIT_HEALTH,
   maxHealth: PLAYER_MAX_HEALTH,
@@ -257,7 +258,7 @@ const drawHealthBar = (
         segmentPosition.y,
         segmentsWidth,
         segmentsHeight,
-        3
+        HEALTH_BAR_RADIOS - 1
       );
       ctx.fill();
 
@@ -270,7 +271,7 @@ const drawHealthBar = (
         segmentPosition.y + 1,
         segmentsWidth - 2,
         Math.max(1, segmentsHeight / 3),
-        2
+        HEALTH_BAR_RADIOS - 2
       );
       ctx.fill();
       ctx.globalAlpha = 1;
@@ -648,6 +649,30 @@ const update = () => {
   handleMovementInput(deltaTime);
 };
 
+const drawScore = () => {
+  const scoreText = "Score: " + player.score;
+
+  gameCtx.save();
+  gameCtx.setTransform(1, 0, 0, 1, 0, 0);
+
+  gameCtx.font = "16px sans-serif";
+  gameCtx.textBaseline = "middle";
+
+  const padding = 10;
+  const textWidth = gameCtx.measureText(scoreText).width;
+  const boxW = textWidth + padding * 2;
+  const boxH = 36;
+  const boxX = gameCanvasW - boxW - 10;
+  const boxY = 10;
+
+  gameCtx.strokeStyle = "#fff";
+  gameCtx.strokeRect(boxX, boxY, boxW, boxH);
+  gameCtx.fillStyle = "#fff";
+  gameCtx.fillText(scoreText, boxX + padding, boxY + boxH / 2);
+
+  gameCtx.restore();
+};
+
 const draw = () => {
   if (!worldBuffer) return;
 
@@ -656,6 +681,7 @@ const draw = () => {
   drawWorldBackground();
   drawEnemies();
   drawPlayer();
+  drawScore();
 
   gameCtx.restore();
 };
