@@ -84,6 +84,7 @@ const player = {
   alive: true,
   health: PLAYER_INIT_HEALTH,
   maxHealth: PLAYER_MAX_HEALTH,
+  lastDirectionKey: null,
   attackCooldown: 0,
   attacking: false,
   attackTimer: 0,
@@ -577,22 +578,42 @@ const updateEnemies = (deltaTime) => {
 
 const handleDodge = () => {};
 
+// pick dominant axis to convert facing vector into a cardinal key
+const getCardinalFromFacing = (fx, fy) => {
+  if (Math.abs(fx) >= Math.abs(fy)) {
+    return fx >= 0 ? "d" : "a";
+  } else {
+    return fy >= 0 ? "s" : "w";
+  }
+};
+
 const startPlayerAttack = (directionKey) => {
   if (player.attacking) return;
+
+  let directionKeyToUse = null;
+
+  if (directionKey) {
+    directionKeyToUse = directionKey;
+  } else if (player.lastDirectionKey) {
+    directionKeyToUse = player.lastDirectionKey;
+  } else {
+    directionKeyToUse = getCardinalFromFacing(
+      player.facingDirectionX,
+      player.facingDirectionY
+    );
+  }
+  if (!directionKeyToUse) directionKeyToUse = "d";
+
+  const directionMap = { w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0] };
+  const direction = directionMap[directionKeyToUse] || [1, 0];
+
+  player.facingDirectionX = direction[0];
+  player.facingDirectionY = direction[1];
 
   player.attacking = true;
   player.attackTimer = 0;
   player.attackHitRegisteredThisSwing = false;
   player.attackCooldown = PLAYER_ATTACK_COOLDOWN;
-
-  if (directionKey) {
-    const dirMap = { w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0] };
-    const dir = dirMap[directionKey];
-    if (dir) {
-      player.facingDirectionX = dir[0];
-      player.facingDirectionY = dir[1];
-    }
-  }
 
   player.animation.typeIndex = ANIMATION_TYPE.ATTACK;
   player.animation.frameIndex = 0;
@@ -603,16 +624,11 @@ const startPlayerAttack = (directionKey) => {
 };
 
 const handleAttack = () => {
-  const pressedDirs = DIRECTION_KEYS.filter((k) => keys[k]);
-  const singleDirectionKey = pressedDirs.length === 1 ? pressedDirs[0] : null;
+  if (keys["f"] && player.attackCooldown <= 0 && !player.attacking) {
+    const pressedDirs = DIRECTION_KEYS.filter((k) => keys[k]);
+    const singleDirectionKey = pressedDirs.length === 1 ? pressedDirs[0] : null;
 
-  if (
-    keys["f"] &&
-    player.attackCooldown <= 0 &&
-    !player.attacking &&
-    singleDirectionKey
-  ) {
-    startPlayerAttack(singleDirectionKey);
+    startPlayerAttack(singleDirectionKey || null);
   }
 };
 
@@ -661,26 +677,68 @@ const updateAttack = (deltaTime) => {
       const dist = Math.hypot(dx, dy);
       if (dist > PLAYER_ATTACK_RANGE) continue;
 
-      // check forward cone using dot product
-      const nx = dist > 0 ? dx / dist : 0;
-      const ny = dist > 0 ? dy / dist : 0;
-      const dot = nx * attackDirX + ny * attackDirY; // 1 = forward, -1 = back
+      if (Math.abs(attackDirX) >= Math.abs(attackDirY)) {
+        if (attackDirX > 0) {
+          // right
+          if (
+            !(
+              ex >= px &&
+              ex - px <= PLAYER_ATTACK_RANGE &&
+              Math.abs(ey - py) <= PLAYER_COLLISION_RADIUS
+            )
+          ) {
+            continue;
+          }
+        } else {
+          // left
+          if (
+            !(
+              ex <= px &&
+              px - ex <= PLAYER_ATTACK_RANGE &&
+              Math.abs(ey - py) <= PLAYER_COLLISION_RADIUS
+            )
+          ) {
+            continue;
+          }
+        }
+      } else {
+        if (attackDirY > 0) {
+          // down
+          if (
+            !(
+              ey >= py &&
+              ey - py <= PLAYER_ATTACK_RANGE &&
+              Math.abs(ex - px) <= PLAYER_COLLISION_RADIUS
+            )
+          ) {
+            continue;
+          }
+        } else {
+          // up
+          if (
+            !(
+              ey <= py &&
+              py - ey <= PLAYER_ATTACK_RANGE &&
+              Math.abs(ex - px) <= PLAYER_COLLISION_RADIUS
+            )
+          ) {
+            continue;
+          }
+        }
+      }
 
-      // allow moderate cone (~60deg). dot > 0.5
-      if (dot > 0.5) {
-        enemy.health -= 1;
+      enemy.health -= 1;
+      enemy.invulnerable = 1.0;
+
+      player.score += HIT_SCORE;
+
+      if (enemy.health <= 0) {
+        enemy.dying = true;
+        enemy.respawnTimer = enemy.spawnDuration;
+        enemy.collidable = false;
         enemy.invulnerable = 1.0;
 
-        player.score += HIT_SCORE;
-
-        if (enemy.health <= 0) {
-          enemy.dying = true;
-          enemy.respawnTimer = enemy.spawnDuration;
-          enemy.collidable = false;
-          enemy.invulnerable = 1.0;
-
-          player.score += KILL_SCORE;
-        }
+        player.score += KILL_SCORE;
       }
     }
 
@@ -811,6 +869,12 @@ const updateAnimation = (deltaTime) => {
 };
 
 const handleMovementInput = (deltaTime) => {
+  if (player.attacking) {
+    handleAttack();
+    handleEnemyCollision(deltaTime);
+    return;
+  }
+
   let movementX = 0;
   let movementY = 0;
 
@@ -841,6 +905,12 @@ const handleMovementInput = (deltaTime) => {
 
     player.facingDirectionX = movementX;
     player.facingDirectionY = movementY;
+
+    const singlePressed = dirCount === 1;
+    if (singlePressed) {
+      const pressedKey = ["w", "a", "s", "d"].find((k) => keys[k]);
+      if (pressedKey) player.lastDirectionKey = pressedKey;
+    }
   }
 
   handleDodge();
