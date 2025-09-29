@@ -400,18 +400,18 @@
         ctx.restore();
 
         // UI: health top-left
-        // ctx.fillStyle = "#111";
-        // ctx.fillRect(10, 10, 130, 36);
-        // ctx.strokeStyle = "#444";
-        // ctx.strokeRect(10, 10, 130, 36);
-        // ctx.fillStyle = "#fff";
-        // ctx.font = "16px sans-serif";
-        // ctx.textBaseline = "middle";
-        // ctx.fillText(
-        //   "Health: " + player.health + " / " + player.maxHealth,
-        //   20,
-        //   28
-        // );
+        ctx.fillStyle = "#111";
+        ctx.fillRect(10, 10, 130, 36);
+        ctx.strokeStyle = "#444";
+        ctx.strokeRect(10, 10, 130, 36);
+        ctx.fillStyle = "#fff";
+        ctx.font = "16px sans-serif";
+        ctx.textBaseline = "middle";
+        ctx.fillText(
+          "Health: " + player.health + " / " + player.maxHealth,
+          20,
+          28
+        );
 
         // UI: score top-right
         // const scoreText = "Score: " + player.score;

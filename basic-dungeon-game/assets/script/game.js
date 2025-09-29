@@ -4,6 +4,8 @@ import {
   COMMON_SPRITE_HEIGHT,
   COMMON_SPRITE_WIDTH,
   DIRECTION_KEYS,
+  ENEMY_INIT_HEALTH,
+  ENEMY_MAX_HEALTH,
   ENEMY_SPAWN_INTERVAL,
   ENEMY_SPEED,
   ENEMY_SPRITE_SHEET_URL,
@@ -11,6 +13,10 @@ import {
   FIRST_RETURN_FRAME_INDEX,
   FRAME_DURATION,
   FRAMES_PER_ANIMATION,
+  HEALTH_BAR_HEIGHT,
+  HEALTH_BAR_RADIOS,
+  HEALTH_BAR_SEGMENT_GAP,
+  HEALTH_BAR_WIDTH,
   INIT_ENEMY_COUNT,
   LAST_FRAME_INDEX,
   LAST_LOOPED_FRAME_INDEX,
@@ -20,6 +26,7 @@ import {
   NO_SPAWN_ENEMY_AREA_SIZE,
   PLAYER_ATTACK_COOLDOWN,
   PLAYER_ATTACK_RANGE,
+  PLAYER_INIT_HEALTH,
   PLAYER_MAX_HEALTH,
   PLAYER_SPEED,
   PLAYER_SPRITE_SHEET_URL,
@@ -29,6 +36,7 @@ import {
 import {
   clamp,
   distantBetween,
+  roundRect,
   spriteCenterCoordinate,
   worldToScreenCoordinate,
 } from "./helper.js";
@@ -66,6 +74,12 @@ const player = {
   facingDirectionX: 1, // control by WASD keys
   facingDirectionY: 0, // control by WASD keys
   alive: true,
+  health: PLAYER_INIT_HEALTH,
+  maxHealth: PLAYER_MAX_HEALTH,
+  healthBarGradient: {
+    startColor: "rgba(155,255,90,1)",
+    endColor: "rgba(100,255,30,1)",
+  },
   animation: {
     typeIndex: ANIMATION_TYPE.STATIC,
     frameIndex: 0,
@@ -153,6 +167,12 @@ const spawnEnemyAwayFromPlayer = () => {
       spawnTimer: 0,
       spawnDuration: 0.6,
       collidable: false,
+      health: ENEMY_INIT_HEALTH,
+      maxHealth: ENEMY_MAX_HEALTH,
+      healthBarGradient: {
+        startColor: "rgba(255,90,90,1)",
+        endColor: "rgba(200,30,30,1)",
+      },
       animation: {
         typeIndex: ANIMATION_TYPE.STATIC,
         frameIndex: 0,
@@ -168,6 +188,108 @@ const spawnEnemyAwayFromPlayer = () => {
       return;
     }
   }
+};
+
+const drawHealthBar = (
+  ctx,
+  topLeftX,
+  topLeftY,
+  spriteW,
+  maxHealth,
+  health,
+  gradient
+) => {
+  const heightBarPosition = {
+    x: topLeftX + (spriteW - HEALTH_BAR_WIDTH) / 2,
+    y: topLeftY - HEALTH_BAR_HEIGHT * 3,
+  };
+
+  const segments = Math.max(1, Math.floor(maxHealth));
+  const totalGap = HEALTH_BAR_SEGMENT_GAP * (segments - 1);
+  const segmentsWidth = (HEALTH_BAR_WIDTH - totalGap) / segments;
+  const segmentsHeight = HEALTH_BAR_HEIGHT;
+
+  // background
+  ctx.save();
+  ctx.fillStyle = "rgba(0,0,0,0.45)";
+  roundRect(
+    ctx,
+    heightBarPosition.x - 2,
+    heightBarPosition.y - 2,
+    HEALTH_BAR_WIDTH + 4,
+    HEALTH_BAR_HEIGHT + 4,
+    HEALTH_BAR_RADIOS
+  );
+  ctx.fill();
+
+  // border
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = "silver";
+  roundRect(
+    ctx,
+    heightBarPosition.x - 2,
+    heightBarPosition.y - 2,
+    HEALTH_BAR_WIDTH + 4,
+    HEALTH_BAR_HEIGHT + 4,
+    HEALTH_BAR_RADIOS
+  );
+  ctx.stroke();
+
+  for (let i = 0; i < segments; i++) {
+    const segmentPosition = {
+      x: heightBarPosition.x + i * (segmentsWidth + HEALTH_BAR_SEGMENT_GAP),
+      y: heightBarPosition.y,
+    };
+
+    if (i < health) {
+      const grad = ctx.createLinearGradient(
+        segmentPosition.x,
+        segmentPosition.y,
+        segmentPosition.x,
+        segmentPosition.y + segmentsHeight
+      );
+      grad.addColorStop(0, gradient.startColor);
+      grad.addColorStop(1, gradient.endColor);
+      ctx.fillStyle = grad;
+      roundRect(
+        ctx,
+        segmentPosition.x,
+        segmentPosition.y,
+        segmentsWidth,
+        segmentsHeight,
+        3
+      );
+      ctx.fill();
+
+      // highlight at top segment
+      ctx.globalAlpha = 0.25;
+      ctx.fillStyle = "white";
+      roundRect(
+        ctx,
+        segmentPosition.x + 1,
+        segmentPosition.y + 1,
+        segmentsWidth - 2,
+        Math.max(1, segmentsHeight / 3),
+        2
+      );
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    } else {
+      // no health segment bg
+      ctx.fillStyle = "rgba(0,0,0,0.25)";
+      roundRect(
+        ctx,
+        segmentPosition.x,
+        segmentPosition.y,
+        segmentsWidth,
+        segmentsHeight,
+        3
+      );
+      ctx.fill();
+    }
+  }
+
+  ctx.restore();
 };
 
 const drawEnemy = (enemy) => {
@@ -269,6 +391,15 @@ const drawEnemy = (enemy) => {
       COMMON_SPRITE_WIDTH,
       COMMON_SPRITE_HEIGHT
     );
+    drawHealthBar(
+      gameCtx,
+      -COMMON_SPRITE_WIDTH / 2,
+      -COMMON_SPRITE_HEIGHT / 2,
+      COMMON_SPRITE_WIDTH,
+      enemy.maxHealth,
+      enemy.health,
+      enemy.healthBarGradient
+    );
     gameCtx.restore();
   } else {
     gameCtx.drawImage(
@@ -281,6 +412,15 @@ const drawEnemy = (enemy) => {
       y,
       COMMON_SPRITE_WIDTH,
       COMMON_SPRITE_HEIGHT
+    );
+    drawHealthBar(
+      gameCtx,
+      x,
+      y,
+      COMMON_SPRITE_WIDTH,
+      enemy.maxHealth,
+      enemy.health,
+      enemy.healthBarGradient
     );
   }
 };
@@ -307,6 +447,16 @@ const drawPlayer = () => {
     y,
     COMMON_SPRITE_WIDTH,
     COMMON_SPRITE_HEIGHT
+  );
+
+  drawHealthBar(
+    gameCtx,
+    x,
+    y,
+    COMMON_SPRITE_WIDTH,
+    player.maxHealth,
+    player.health,
+    player.healthBarGradient
   );
 };
 
