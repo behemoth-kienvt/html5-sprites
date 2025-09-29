@@ -272,23 +272,23 @@
         // }
 
         // enemy collision
-        // for (let i = enemies.length - 1; i >= 0; i--) {
-        //   const e = enemies[i];
-        //   const d = Math.hypot(player.x - e.x, player.y - e.y);
-        //   if (d <= player.radius + e.r) {
-        //     if (player.invulnerable <= 0) {
-        //       player.health -= 1;
-        //       player.invulnerable = 0.9;
-        //       if (player.health <= 0) {
-        //         // reset player but keep score
-        //         player.health = player.maxHealth;
-        //         player.x = world.w / 2;
-        //         player.y = world.h / 2;
-        //         enemies = [];
-        //       }
-        //     }
-        //   }
-        // }
+        for (let i = enemies.length - 1; i >= 0; i--) {
+          const e = enemies[i];
+          const d = Math.hypot(player.x - e.x, player.y - e.y);
+          if (d <= player.radius + e.r) {
+            if (player.invulnerable <= 0) {
+              player.health -= 1;
+              player.invulnerable = 0.9;
+              if (player.health <= 0) {
+                // reset player but keep score
+                player.health = player.maxHealth;
+                player.x = world.w / 2;
+                player.y = world.h / 2;
+                enemies = [];
+              }
+            }
+          }
+        }
 
         // update animations
         if (moving) player.animTime += dt;
@@ -384,18 +384,18 @@
         // }
 
         // damage flash
-        // if (
-        //   player.invulnerable > 0 &&
-        //   Math.floor(player.invulnerable * 8) % 2 === 0
-        // ) {
-        //   ctx.fillStyle = "rgba(255,255,255,0.06)";
-        //   ctx.fillRect(
-        //     player.x - FRAME_W / 2,
-        //     player.y - FRAME_H / 2,
-        //     FRAME_W,
-        //     FRAME_H
-        //   );
-        // }
+        if (
+          player.invulnerable > 0 &&
+          Math.floor(player.invulnerable * 8) % 2 === 0
+        ) {
+          ctx.fillStyle = "rgba(255,255,255,0.06)";
+          ctx.fillRect(
+            player.x - FRAME_W / 2,
+            player.y - FRAME_H / 2,
+            FRAME_W,
+            FRAME_H
+          );
+        }
 
         ctx.restore();
 

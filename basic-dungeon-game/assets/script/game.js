@@ -4,6 +4,7 @@ import {
   COMMON_SPRITE_HEIGHT,
   COMMON_SPRITE_WIDTH,
   DIRECTION_KEYS,
+  ENEMY_COLLISION_RADIUS,
   ENEMY_INIT_HEALTH,
   ENEMY_MAX_HEALTH,
   ENEMY_SPAWN_INTERVAL,
@@ -26,7 +27,9 @@ import {
   NO_SPAWN_ENEMY_AREA_SIZE,
   PLAYER_ATTACK_COOLDOWN,
   PLAYER_ATTACK_RANGE,
+  PLAYER_COLLISION_RADIUS,
   PLAYER_INIT_HEALTH,
+  PLAYER_INVULNERABLE_TIME,
   PLAYER_MAX_HEALTH,
   PLAYER_SPEED,
   PLAYER_SPRITE_SHEET_URL,
@@ -70,10 +73,11 @@ const player = {
   x: worldSize.w / 2, // world horizontal center
   y: worldSize.h / 2, // world vertical center
   speed: PLAYER_SPEED, // movement speed (px/s)
-  radius: COMMON_SPRITE_WIDTH / 2, // collision radius
+  collisionRadius: PLAYER_COLLISION_RADIUS, //
   facingDirectionX: 1, // control by WASD keys
   facingDirectionY: 0, // control by WASD keys
   score: 0,
+  invulnerable: 0, // seconds
   alive: true,
   health: PLAYER_INIT_HEALTH,
   maxHealth: PLAYER_MAX_HEALTH,
@@ -160,10 +164,11 @@ const spawnEnemyAwayFromPlayer = () => {
       x: x,
       y: y,
       speed: ENEMY_SPEED,
-      radius: COMMON_SPRITE_WIDTH / 2,
+      collisionRadius: ENEMY_COLLISION_RADIUS,
       facingDirectionX: 1,
       facingDirectionY: 0,
       alive: true,
+      invulnerable: 0,
       spawning: true,
       spawnTimer: 0,
       spawnDuration: 0.6,
@@ -198,7 +203,8 @@ const drawHealthBar = (
   spriteW,
   maxHealth,
   health,
-  gradient
+  gradient,
+  invulnerable
 ) => {
   const heightBarPosition = {
     x: topLeftX + (spriteW - HEALTH_BAR_WIDTH) / 2,
@@ -235,6 +241,16 @@ const drawHealthBar = (
     HEALTH_BAR_RADIOS
   );
   ctx.stroke();
+
+  drawDamageFlash(
+    ctx,
+    heightBarPosition.x,
+    heightBarPosition.y,
+    HEALTH_BAR_WIDTH,
+    HEALTH_BAR_HEIGHT,
+    HEALTH_BAR_RADIOS,
+    invulnerable
+  );
 
   for (let i = 0; i < segments; i++) {
     const segmentPosition = {
@@ -291,6 +307,17 @@ const drawHealthBar = (
   }
 
   ctx.restore();
+};
+
+const drawDamageFlash = (ctx, x, y, w, h, r, invulnerable) => {
+  if (invulnerable > 0 && Math.floor(invulnerable * 8) % 2 === 0) {
+    ctx.save();
+    ctx.globalCompositeOperation = "source-over";
+    ctx.fillStyle = "rgb(255, 0, 0)";
+    roundRect(ctx, x, y, w, h, r);
+    ctx.fill();
+    ctx.restore();
+  }
 };
 
 const drawEnemy = (enemy) => {
@@ -399,7 +426,8 @@ const drawEnemy = (enemy) => {
       COMMON_SPRITE_WIDTH,
       enemy.maxHealth,
       enemy.health,
-      enemy.healthBarGradient
+      enemy.healthBarGradient,
+      enemy.invulnerable
     );
     gameCtx.restore();
   } else {
@@ -421,7 +449,8 @@ const drawEnemy = (enemy) => {
       COMMON_SPRITE_WIDTH,
       enemy.maxHealth,
       enemy.health,
-      enemy.healthBarGradient
+      enemy.healthBarGradient,
+      enemy.invulnerable
     );
   }
 };
@@ -457,7 +486,8 @@ const drawPlayer = () => {
     COMMON_SPRITE_WIDTH,
     player.maxHealth,
     player.health,
-    player.healthBarGradient
+    player.healthBarGradient,
+    player.invulnerable
   );
 };
 
@@ -491,7 +521,28 @@ const handleDodge = () => {};
 
 const handleAttack = () => {};
 
-const handleEnemyCollision = () => {};
+const handleEnemyCollision = (deltaTime) => {
+  if (player.invulnerable > 0)
+    player.invulnerable = Math.max(0, player.invulnerable - deltaTime);
+
+  for (let i = enemies.length - 1; i >= 0; i--) {
+    const enemy = enemies[i];
+    const distanceFromPlayer = distantBetween(player, enemy);
+
+    if (distanceFromPlayer <= player.collisionRadius + enemy.collisionRadius) {
+      if (player.invulnerable <= 0) {
+        player.health -= 1;
+        player.invulnerable = PLAYER_INVULNERABLE_TIME;
+
+        if (player.health <= 0) {
+          player.health = player.maxHealth;
+          player.x = worldSize.w / 2;
+          player.y = worldSize.h / 2;
+        }
+      }
+    }
+  }
+};
 
 const handleNormalMove = (movementX, movementY, deltaTime) => {
   const speed = player.speed;
@@ -607,7 +658,7 @@ const handleMovementInput = (deltaTime) => {
 
   if (dirCount > 1) {
     handleAttack();
-    handleEnemyCollision();
+    handleEnemyCollision(deltaTime);
     return;
   }
 
@@ -631,7 +682,7 @@ const handleMovementInput = (deltaTime) => {
   player.y = clamp(player.y, 10, worldSize.h - 10);
 
   handleAttack();
-  handleEnemyCollision();
+  handleEnemyCollision(deltaTime);
 };
 
 const update = () => {
