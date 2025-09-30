@@ -4,6 +4,14 @@ import {
   COMMON_SPRITE_HEIGHT,
   COMMON_SPRITE_WIDTH,
   DIRECTION_KEYS,
+  DODGE_ANIMATION_PHASES,
+  DODGE_IN_COLOR,
+  DODGE_INVULNERABLE_DURATION,
+  DODGE_OUT_COLOR,
+  DODGE_PRE_TELEPORT_DURATION,
+  DODGE_RANGE,
+  DODGE_SPAWN_DURATION,
+  DODGE_STAMINA_COST,
   ENEMY_COLLISION_RADIUS,
   ENEMY_HEALTH_BAR_GRADIENT_END_COLOR,
   ENEMY_HEALTH_BAR_GRADIENT_START_COLOR,
@@ -110,6 +118,20 @@ const player = {
   invulnerable: 0, // seconds
   alive: true,
   lastDirectionKey: null,
+  dodgeMode: {
+    spaceLock: false,
+    isDodging: false,
+    state: {
+      phase: DODGE_ANIMATION_PHASES.NULL,
+      timer: 0,
+      outDuration: DODGE_PRE_TELEPORT_DURATION,
+      originX: 0,
+      originY: 0,
+      destinationX: 0,
+      destinationY: 0,
+      spawnDuration: DODGE_SPAWN_DURATION,
+    },
+  },
   dashMode: {
     shiftLock: false,
     isDashing: false,
@@ -840,7 +862,189 @@ const updateEnemies = (deltaTime) => {
   }
 };
 
-const handleDodge = () => {};
+const isSpacePressed = () => {
+  return !!(keys[" "] || keys["space"] || keys["spacebar"]);
+};
+
+const startDodge = (directionX, directionY) => {
+  if (!directionX && !directionY) return;
+  if (player.stamina.current < DODGE_STAMINA_COST) return;
+
+  player.stamina.current -= DODGE_STAMINA_COST;
+  if (player.stamina.current < 0) player.stamina.current = 0;
+
+  player.attack.attacking = false;
+  player.attack.timer = 0;
+  player.attack.hitRegisteredThisSwing = false;
+
+  player.animation.typeIndex = ANIMATION_TYPE.STATIC;
+  player.animation.frameIndex = 0;
+  player.animation.frameTimer = 0;
+  player.animation.playing = false;
+  player.animation.finishing = false;
+
+  player.dashMode.isDashing = false;
+
+  player.dodgeMode.spaceLock = true;
+
+  const targetDestinationRaw = {
+    x: player.x + directionX * DODGE_RANGE,
+    y: player.y + directionY * DODGE_RANGE,
+  };
+  const targetDestination = {
+    x: Math.max(0, Math.min(worldSize.width, targetDestinationRaw.x)),
+    y: Math.max(0, Math.min(worldSize.height, targetDestinationRaw.y)),
+  };
+
+  player.dodgeMode.state.timer = 0;
+  player.dodgeMode.state.outDuration = DODGE_PRE_TELEPORT_DURATION;
+  player.dodgeMode.state.spawnDuration = DODGE_SPAWN_DURATION;
+
+  player.dodgeMode.isDodging = true;
+  player.dodgeMode.state.phase = DODGE_ANIMATION_PHASES.OUT;
+  player.dodgeMode.state.originX = player.x;
+  player.dodgeMode.state.originY = player.y;
+  player.dodgeMode.state.destinationX = targetDestination.x;
+  player.dodgeMode.state.destinationY = targetDestination.y;
+};
+
+const updateDodge = (deltaTime) => {
+  if (
+    !player.dodgeMode.isDodging ||
+    player.dodgeMode.state.phase == DODGE_ANIMATION_PHASES.NULL
+  )
+    return;
+
+  const dodgeState = player.dodgeMode.state;
+  dodgeState.timer += deltaTime;
+
+  if (dodgeState.phase === DODGE_ANIMATION_PHASES.OUT) {
+    if (dodgeState.timer >= dodgeState.outDuration) {
+      player.x = dodgeState.destinationX;
+      player.y = dodgeState.destinationY;
+
+      player.invulnerable = Math.max(
+        player.invulnerable,
+        DODGE_INVULNERABLE_DURATION
+      );
+
+      dodgeState.phase = DODGE_ANIMATION_PHASES.IN;
+      dodgeState.timer = 0;
+    }
+  } else if (dodgeState.phase === DODGE_ANIMATION_PHASES.IN) {
+    if (dodgeState.timer >= dodgeState.spawnDuration) {
+      player.dodgeMode.isDodging = false;
+      player.dodgeMode.state = {
+        phase: DODGE_ANIMATION_PHASES.NULL,
+        timer: 0,
+        outDuration: DODGE_PRE_TELEPORT_DURATION,
+        originX: 0,
+        originY: 0,
+        destinationX: 0,
+        destinationY: 0,
+        spawnDuration: DODGE_SPAWN_DURATION,
+      };
+    }
+  }
+};
+
+const drawDodgeEffects = () => {
+  if (player.dodgeMode.state.phase == DODGE_ANIMATION_PHASES.NULL) return;
+
+  const camera = getCameraView();
+  const dodgeState = player.dodgeMode.state;
+
+  gameCtx.save();
+
+  if (dodgeState.phase === DODGE_ANIMATION_PHASES.OUT) {
+    const time = Math.min(1, dodgeState.timer / dodgeState.outDuration);
+    const radius = 10 + time * 80;
+    const alpha = 1 - time;
+
+    gameCtx.beginPath();
+    gameCtx.globalAlpha = alpha * 0.9;
+    gameCtx.strokeStyle = DODGE_OUT_COLOR;
+    gameCtx.lineWidth = 4 * (1 - time) + 1;
+    gameCtx.arc(
+      dodgeState.originX - camera.x,
+      dodgeState.originY - camera.y,
+      radius,
+      0,
+      Math.PI * 2
+    );
+    gameCtx.stroke();
+
+    // center flash
+    gameCtx.globalAlpha = Math.min(0.7, 0.7 * (1 - time));
+    gameCtx.fillStyle = DODGE_IN_COLOR;
+    gameCtx.beginPath();
+    gameCtx.arc(
+      dodgeState.originX - camera.x,
+      dodgeState.originY - camera.y,
+      6 * (1 - time) + 2,
+      0,
+      Math.PI * 2
+    );
+    gameCtx.fill();
+  }
+
+  if (dodgeState.phase === DODGE_ANIMATION_PHASES.IN) {
+    const time = Math.min(1, dodgeState.timer / dodgeState.spawnDuration);
+    const radius = 8 + time * 90;
+    const alpha = 1 - time * 0.95;
+
+    gameCtx.beginPath();
+    gameCtx.globalAlpha = alpha;
+    gameCtx.strokeStyle = "rgba(60,140,255,1)";
+    gameCtx.lineWidth = 3 * (1 - time) + 1;
+    gameCtx.arc(
+      dodgeState.destinationX - camera.x,
+      dodgeState.destinationY - camera.y,
+      radius,
+      0,
+      Math.PI * 2
+    );
+    gameCtx.stroke();
+
+    gameCtx.globalAlpha = Math.min(0.6, 0.6 * (1 - time));
+    gameCtx.fillStyle = "rgba(120,200,255,1)";
+    gameCtx.beginPath();
+    gameCtx.arc(
+      dodgeState.destinationX - camera.x,
+      dodgeState.destinationY - camera.y,
+      6 * (1 - time) + 3,
+      0,
+      Math.PI * 2
+    );
+    gameCtx.fill();
+  }
+
+  gameCtx.restore();
+};
+
+const handleDodge = (movementX, movementY, deltaTime) => {
+  const spacePressed = isSpacePressed();
+
+  if (!spacePressed) {
+    player.dodgeMode.spaceLock = false;
+  }
+
+  if (
+    spacePressed &&
+    !player.dodgeMode.spaceLock &&
+    !player.dodgeMode.isDodging &&
+    (movementX !== 0 || movementY !== 0)
+  ) {
+    startDodge(movementX, movementY);
+  }
+
+  if (player.dodgeMode.isDodging) {
+    updateDodge(deltaTime);
+    return true;
+  }
+
+  return false;
+};
 
 // pick dominant axis to convert facing vector into a cardinal key
 const getCardinalFromFacing = (fx, fy) => {
@@ -1050,7 +1254,8 @@ const handleDashMove = (movementX, movementY, deltaTime) => {
     player.dashMode.shiftLock = true;
   }
 
-  player.dashMode.isDashing = player.stamina.current > 0 && !player.shiftLock;
+  player.dashMode.isDashing =
+    player.stamina.current > 0 && !player.dashMode.shiftLock;
 };
 
 const handleNormalMove = (movementX, movementY, deltaTime) => {
@@ -1174,7 +1379,7 @@ const updateAnimation = (deltaTime) => {
       player.animation.playing = false;
       player.animation.finishing = false;
       player.animation.phase = ANIMATION_PHASES.NULL;
-      player.animation.colIndex = ANIMATION_TYPE.STATIC;
+      player.animation.typeIndex = ANIMATION_TYPE.STATIC;
       player.animation.frameIndex = 0;
       player.animation.frameTimer = 0;
     }
@@ -1182,12 +1387,6 @@ const updateAnimation = (deltaTime) => {
 };
 
 const handleMovementInput = (deltaTime) => {
-  if (player.attack.attacking) {
-    handleAttack();
-    handleEnemyCollision(deltaTime);
-    return;
-  }
-
   let movementX = 0;
   let movementY = 0;
 
@@ -1226,15 +1425,25 @@ const handleMovementInput = (deltaTime) => {
     }
   }
 
-  handleDodge();
-  handleDash(movementX, movementY, deltaTime);
+  const dodgeActive = handleDodge(movementX, movementY, deltaTime);
 
-  // clamp player position inside world border
-  player.x = clamp(player.x, 10, worldSize.width - 10);
-  player.y = clamp(player.y, 10, worldSize.height - 10);
+  if (!dodgeActive) {
+    if (player.attack.attacking) {
+      handleAttack();
+      handleEnemyCollision(deltaTime);
+      return;
+    }
 
-  handleAttack();
-  handleEnemyCollision(deltaTime);
+    handleDash(movementX, movementY, deltaTime);
+
+    player.x = clamp(player.x, 10, worldSize.width - 10);
+    player.y = clamp(player.y, 10, worldSize.height - 10);
+
+    handleAttack();
+    handleEnemyCollision(deltaTime);
+  } else {
+    return;
+  }
 };
 
 const update = () => {
@@ -1290,6 +1499,7 @@ const draw = () => {
   gameCtx.restore();
 
   drawMinimap();
+  drawDodgeEffects();
 };
 
 const loop = () => {
