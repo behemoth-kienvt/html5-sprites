@@ -7,6 +7,7 @@ import {
   ENEMY_COLLISION_RADIUS,
   ENEMY_INIT_HEALTH,
   ENEMY_MAX_HEALTH,
+  ENEMY_SPAWN_DURATION,
   ENEMY_SPAWN_INTERVAL,
   ENEMY_SPEED,
   ENEMY_SPRITE_SHEET_URL,
@@ -88,8 +89,6 @@ const player = {
   score: 0,
   invulnerable: 0, // seconds
   alive: true,
-  health: PLAYER_INIT_HEALTH,
-  maxHealth: PLAYER_MAX_HEALTH,
   lastDirectionKey: null,
   facingDirection: {
     x: 1,
@@ -101,9 +100,13 @@ const player = {
     timer: 0,
     hitRegisteredThisSwing: false,
   },
-  healthBarGradient: {
-    startColor: "rgba(155,255,90,1)",
-    endColor: "rgba(100,255,30,1)",
+  health: {
+    current: PLAYER_INIT_HEALTH,
+    max: PLAYER_MAX_HEALTH,
+    healthBarGradient: {
+      startColor: "rgba(155,255,90,1)",
+      endColor: "rgba(100,255,30,1)",
+    },
   },
   animation: {
     typeIndex: ANIMATION_TYPE.STATIC,
@@ -201,22 +204,24 @@ const spawnEnemyAwayFromPlayer = () => {
       alive: true,
       invulnerable: 0,
       collidable: false,
-      health: ENEMY_INIT_HEALTH,
-      maxHealth: ENEMY_MAX_HEALTH,
       dying: false,
       spawn: {
         spawning: true,
         timer: 0,
-        duration: 0.6,
+        duration: ENEMY_SPAWN_DURATION,
         respawnTimer: 0,
       },
       facingDirection: {
         x: 1,
         y: 0,
       },
-      healthBarGradient: {
-        startColor: "rgba(255,90,90,1)",
-        endColor: "rgba(200,30,30,1)",
+      health: {
+        current: ENEMY_INIT_HEALTH,
+        max: ENEMY_MAX_HEALTH,
+        healthBarGradient: {
+          startColor: "rgba(255,90,90,1)",
+          endColor: "rgba(200,30,30,1)",
+        },
       },
       animation: {
         typeIndex: ANIMATION_TYPE.STATIC,
@@ -601,9 +606,9 @@ const drawEnemy = (enemy) => {
       -COMMON_SPRITE_WIDTH / 2,
       -COMMON_SPRITE_HEIGHT / 2,
       COMMON_SPRITE_WIDTH,
-      enemy.maxHealth,
-      enemy.health,
-      enemy.healthBarGradient,
+      enemy.health.max,
+      enemy.health.current,
+      enemy.health.healthBarGradient,
       enemy.invulnerable
     );
 
@@ -626,9 +631,9 @@ const drawEnemy = (enemy) => {
       spriteCenterPosition.x,
       spriteCenterPosition.y,
       COMMON_SPRITE_WIDTH,
-      enemy.maxHealth,
-      enemy.health,
-      enemy.healthBarGradient,
+      enemy.health.max,
+      enemy.health.current,
+      enemy.health.healthBarGradient,
       enemy.invulnerable
     );
   }
@@ -665,9 +670,9 @@ const drawPlayer = () => {
     spriteCenterPosition.x,
     spriteCenterPosition.y,
     COMMON_SPRITE_WIDTH,
-    player.maxHealth,
-    player.health,
-    player.healthBarGradient,
+    player.health.max,
+    player.health.current,
+    player.health.healthBarGradient,
     player.invulnerable
   );
 };
@@ -870,12 +875,12 @@ const updateAttack = (deltaTime) => {
         }
       }
 
-      enemy.health -= 1;
+      enemy.health.current -= 1;
       enemy.invulnerable = 1.0;
 
       player.score += HIT_SCORE;
 
-      if (enemy.health <= 0) {
+      if (enemy.health.current <= 0) {
         enemy.dying = true;
         enemy.spawn.respawnTimer = enemy.spawn.duration;
         enemy.collidable = false;
@@ -899,11 +904,11 @@ const handleEnemyCollision = (deltaTime) => {
 
     if (distanceFromPlayer <= player.collisionRadius + enemy.collisionRadius) {
       if (player.invulnerable <= 0) {
-        player.health -= 1;
+        player.health.current -= 1;
         player.invulnerable = PLAYER_INVULNERABLE_TIME;
 
-        if (player.health <= 0) {
-          player.health = player.maxHealth;
+        if (player.health.current <= 0) {
+          player.health.current = player.health.max;
           player.x = worldSize.width / 2;
           player.y = worldSize.height / 2;
         }
