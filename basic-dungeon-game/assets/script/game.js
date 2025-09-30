@@ -5,6 +5,8 @@ import {
   COMMON_SPRITE_WIDTH,
   DIRECTION_KEYS,
   ENEMY_COLLISION_RADIUS,
+  ENEMY_HEALTH_BAR_GRADIENT_END_COLOR,
+  ENEMY_HEALTH_BAR_GRADIENT_START_COLOR,
   ENEMY_INIT_HEALTH,
   ENEMY_MAX_HEALTH,
   ENEMY_SPAWN_DURATION,
@@ -15,6 +17,9 @@ import {
   FIRST_RETURN_FRAME_INDEX,
   FRAME_DURATION,
   FRAMES_PER_ANIMATION,
+  HEALTH_BAR_BACKGROUND_COLOR,
+  HEALTH_BAR_BORDER_COLOR,
+  HEALTH_BAR_DAMAGE_FLASH_COLOR,
   HEALTH_BAR_HEIGHT,
   HEALTH_BAR_RADIOS,
   HEALTH_BAR_SEGMENT_GAP,
@@ -41,11 +46,26 @@ import {
   PLAYER_ATTACK_FRAME,
   PLAYER_ATTACK_RANGE,
   PLAYER_COLLISION_RADIUS,
+  PLAYER_DASH_ANIMATION_MULTIPLIER,
+  PLAYER_DASH_SPEED_MULTIPLIER,
+  PLAYER_HEALTH_BAR_GRADIENT_END_COLOR,
+  PLAYER_HEALTH_BAR_GRADIENT_START_COLOR,
   PLAYER_INIT_HEALTH,
+  PLAYER_INIT_STAMINA,
   PLAYER_INVULNERABLE_TIME,
   PLAYER_MAX_HEALTH,
+  PLAYER_MAX_STAMINA,
   PLAYER_SPEED,
   PLAYER_SPRITE_SHEET_URL,
+  PLAYER_STAMINA_REGENERATE_RATE,
+  STAMINA_BAR_BACKGROUND_COLOR,
+  STAMINA_BAR_BORDER_COLOR,
+  STAMINA_BAR_GRADIENT_END_COLOR,
+  STAMINA_BAR_GRADIENT_START_COLOR,
+  STAMINA_BAR_HEIGHT,
+  STAMINA_BAR_PADDING,
+  STAMINA_BAR_RADIOS,
+  STAMINA_BAR_WIDTH,
   WORLD_BG_URL,
 } from "./config.js";
 
@@ -90,6 +110,14 @@ const player = {
   invulnerable: 0, // seconds
   alive: true,
   lastDirectionKey: null,
+  dashMode: {
+    shiftLock: false,
+    isDashing: false,
+  },
+  stamina: {
+    current: PLAYER_INIT_STAMINA,
+    max: PLAYER_MAX_STAMINA,
+  },
   facingDirection: {
     x: 1,
     y: 0,
@@ -104,8 +132,8 @@ const player = {
     current: PLAYER_INIT_HEALTH,
     max: PLAYER_MAX_HEALTH,
     healthBarGradient: {
-      startColor: "rgba(155,255,90,1)",
-      endColor: "rgba(100,255,30,1)",
+      startColor: PLAYER_HEALTH_BAR_GRADIENT_START_COLOR,
+      endColor: PLAYER_HEALTH_BAR_GRADIENT_END_COLOR,
     },
   },
   animation: {
@@ -219,8 +247,8 @@ const spawnEnemyAwayFromPlayer = () => {
         current: ENEMY_INIT_HEALTH,
         max: ENEMY_MAX_HEALTH,
         healthBarGradient: {
-          startColor: "rgba(255,90,90,1)",
-          endColor: "rgba(200,30,30,1)",
+          startColor: ENEMY_HEALTH_BAR_GRADIENT_START_COLOR,
+          endColor: ENEMY_HEALTH_BAR_GRADIENT_END_COLOR,
         },
       },
       animation: {
@@ -240,7 +268,7 @@ const spawnEnemyAwayFromPlayer = () => {
   }
 };
 
-const drawMiniMap = () => {
+const drawMinimap = () => {
   gameCtx.save();
   gameCtx.setTransform(1, 0, 0, 1, 0, 0);
 
@@ -336,6 +364,90 @@ const drawMiniMap = () => {
   gameCtx.restore();
 };
 
+const drawStaminaBar = (
+  ctx,
+  topLeftX,
+  topLeftY,
+  spriteWidth,
+  maxStamina,
+  stamina
+) => {
+  const healthBarY = topLeftY - HEALTH_BAR_HEIGHT * 3;
+  const staminaBarPosition = {
+    x: topLeftX + (spriteWidth - STAMINA_BAR_WIDTH) / 2,
+    y: healthBarY - STAMINA_BAR_HEIGHT - STAMINA_BAR_PADDING,
+  };
+
+  const safeMax = Math.max(0.0001, maxStamina);
+  const clampedStamina = Math.max(0, Math.min(stamina, maxStamina));
+  const fillWidth = (clampedStamina / safeMax) * STAMINA_BAR_WIDTH;
+
+  // background
+  ctx.save();
+  ctx.fillStyle = STAMINA_BAR_BACKGROUND_COLOR;
+  roundRect(
+    ctx,
+    staminaBarPosition.x - 2,
+    staminaBarPosition.y - 2,
+    STAMINA_BAR_WIDTH + 4,
+    STAMINA_BAR_HEIGHT + 4,
+    STAMINA_BAR_RADIOS
+  );
+  ctx.fill();
+
+  // border
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = STAMINA_BAR_BORDER_COLOR;
+  roundRect(
+    ctx,
+    staminaBarPosition.x - 2,
+    staminaBarPosition.y - 2,
+    STAMINA_BAR_WIDTH + 4,
+    STAMINA_BAR_HEIGHT + 4,
+    STAMINA_BAR_RADIOS
+  );
+  ctx.stroke();
+
+  const gradient = ctx.createLinearGradient(
+    staminaBarPosition.x,
+    staminaBarPosition.y,
+    staminaBarPosition.x,
+    staminaBarPosition.y + STAMINA_BAR_HEIGHT
+  );
+  gradient.addColorStop(0, STAMINA_BAR_GRADIENT_START_COLOR);
+  gradient.addColorStop(1, STAMINA_BAR_GRADIENT_END_COLOR);
+  ctx.fillStyle = gradient;
+
+  if (fillWidth > 0) {
+    const drawRadius = Math.max(2, STAMINA_BAR_RADIOS - 1);
+    roundRect(
+      ctx,
+      staminaBarPosition.x,
+      staminaBarPosition.y,
+      fillWidth,
+      STAMINA_BAR_HEIGHT,
+      drawRadius
+    );
+    ctx.fill();
+
+    // top highlight
+    ctx.globalAlpha = 0.25;
+    ctx.fillStyle = "white";
+    roundRect(
+      ctx,
+      staminaBarPosition.x + 1,
+      staminaBarPosition.y + 1,
+      Math.max(1, fillWidth - 2),
+      Math.max(1, STAMINA_BAR_HEIGHT / 3),
+      Math.max(1, drawRadius - 1)
+    );
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.restore();
+};
+
 const drawHealthBar = (
   ctx,
   topLeftX,
@@ -358,7 +470,7 @@ const drawHealthBar = (
 
   // background
   ctx.save();
-  ctx.fillStyle = "rgba(0,0,0,0.45)";
+  ctx.fillStyle = HEALTH_BAR_BACKGROUND_COLOR;
   roundRect(
     ctx,
     heightBarPosition.x - 2,
@@ -371,7 +483,7 @@ const drawHealthBar = (
 
   // border
   ctx.lineWidth = 2;
-  ctx.strokeStyle = "silver";
+  ctx.strokeStyle = HEALTH_BAR_BORDER_COLOR;
   roundRect(
     ctx,
     heightBarPosition.x - 2,
@@ -453,7 +565,7 @@ const drawDamageFlash = (ctx, x, y, width, height, radius, invulnerable) => {
   if (invulnerable > 0 && Math.floor(invulnerable * 8) % 2 === 0) {
     ctx.save();
     ctx.globalCompositeOperation = "source-over";
-    ctx.fillStyle = "rgb(255, 0, 0)";
+    ctx.fillStyle = HEALTH_BAR_DAMAGE_FLASH_COLOR;
     roundRect(ctx, x, y, width, height, radius);
     ctx.fill();
     ctx.restore();
@@ -663,6 +775,15 @@ const drawPlayer = () => {
     spriteCenterPosition.y,
     COMMON_SPRITE_WIDTH,
     COMMON_SPRITE_HEIGHT
+  );
+
+  drawStaminaBar(
+    gameCtx,
+    spriteCenterPosition.x,
+    spriteCenterPosition.y,
+    COMMON_SPRITE_WIDTH,
+    player.stamina.max,
+    player.stamina.current
   );
 
   drawHealthBar(
@@ -917,15 +1038,55 @@ const handleEnemyCollision = (deltaTime) => {
   }
 };
 
+const handleDashMove = (movementX, movementY, deltaTime) => {
+  const dashSpeed = player.speed * PLAYER_DASH_SPEED_MULTIPLIER;
+
+  player.x += movementX * dashSpeed * deltaTime;
+  player.y += movementY * dashSpeed * deltaTime;
+
+  player.stamina.current -= deltaTime;
+  if (player.stamina.current <= 0) {
+    player.stamina.current = 0;
+    player.dashMode.shiftLock = true;
+  }
+
+  player.dashMode.isDashing = player.stamina.current > 0 && !player.shiftLock;
+};
+
 const handleNormalMove = (movementX, movementY, deltaTime) => {
   const speed = player.speed;
 
   player.x += movementX * speed * deltaTime;
   player.y += movementY * speed * deltaTime;
+
+  if (player.stamina.current < player.stamina.max) {
+    player.stamina.current += PLAYER_STAMINA_REGENERATE_RATE * deltaTime;
+    if (player.stamina.current > player.stamina.max)
+      player.stamina.current = player.stamina.max;
+  }
 };
 
 const handleDash = (movementX, movementY, deltaTime) => {
-  handleNormalMove(movementX, movementY, deltaTime);
+  player.dashMode.isDashing = false;
+
+  const holdingShift = !!keys["shift"];
+  const moving = movementX !== 0 || movementY !== 0;
+
+  if (!holdingShift) {
+    player.dashMode.shiftLock = false;
+  }
+
+  const canDash =
+    holdingShift &&
+    moving &&
+    player.stamina.current > 0 &&
+    !player.dashMode.shiftLock;
+
+  if (canDash) {
+    handleDashMove(movementX, movementY, deltaTime);
+  } else {
+    handleNormalMove(movementX, movementY, deltaTime);
+  }
 };
 
 const updateAnimation = (deltaTime) => {
@@ -951,7 +1112,11 @@ const updateAnimation = (deltaTime) => {
       player.animation.phase = ANIMATION_PHASES.STARTUP;
     }
 
-    player.animation.frameTimer += deltaTime;
+    const animSpeedMultiplier = player.dashMode.isDashing
+      ? PLAYER_DASH_ANIMATION_MULTIPLIER
+      : 1.0;
+    player.animation.frameTimer += deltaTime * animSpeedMultiplier;
+
     if (player.animation.frameTimer >= FRAME_DURATION) {
       player.animation.frameTimer -= FRAME_DURATION;
 
@@ -1124,7 +1289,7 @@ const draw = () => {
 
   gameCtx.restore();
 
-  drawMiniMap();
+  drawMinimap();
 };
 
 const loop = () => {
