@@ -3,6 +3,6 @@
     "checkJs": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "target": "ES6"
+    "target": "es2016"
   },
 }

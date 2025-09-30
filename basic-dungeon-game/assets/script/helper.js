@@ -17,10 +17,6 @@ const distantBetween = (a, b) => {
   return Math.hypot(x, y);
 };
 
-const worldToScreenCoordinate = (worldX, worldY, camera) => {
-  return { x: worldX - camera.x, y: worldY - camera.y };
-};
-
 const spriteCenterCoordinate = (target) => {
   return {
     x: Math.round(target.x - COMMON_SPRITE_WIDTH / 2),
@@ -28,16 +24,40 @@ const spriteCenterCoordinate = (target) => {
   };
 };
 
-const roundRect = (ctx, x, y, w, h, r) => {
-  const radius = typeof r === "number" ? r : 4;
+const roundRect = (
+  ctx,
+  x,
+  y,
+  width,
+  height,
+  radius,
+  fill = false,
+  stroke = false
+) => {
+  if (typeof radius === "undefined") radius = 5;
 
   ctx.beginPath();
   ctx.moveTo(x + radius, y);
-  ctx.arcTo(x + w, y, x + w, y + h, radius);
-  ctx.arcTo(x + w, y + h, x, y + h, radius);
-  ctx.arcTo(x, y + h, x, y, radius);
-  ctx.arcTo(x, y, x + w, y, radius);
+  ctx.arcTo(x + width, y, x + width, y + height, radius);
+  ctx.arcTo(x + width, y + height, x, y + height, radius);
+  ctx.arcTo(x, y + height, x, y, radius);
+  ctx.arcTo(x, y, x + width, y, radius);
   ctx.closePath();
+
+  if (fill) ctx.fill();
+  if (stroke) ctx.stroke();
+};
+
+const worldToMinimap = (target, worldSize, minimap) => {
+  return {
+    x:
+      minimap.x +
+      ((target.x + COMMON_SPRITE_WIDTH / 2) / worldSize.width) * minimap.width,
+    y:
+      minimap.y +
+      ((target.y + COMMON_SPRITE_HEIGHT / 2) / worldSize.height) *
+        minimap.height,
+  };
 };
 
 export {
@@ -46,5 +66,5 @@ export {
   roundRect,
   spriteCenterCoordinate,
   subtractPosition,
-  worldToScreenCoordinate,
+  worldToMinimap,
 };

@@ -26,6 +26,15 @@ import {
   MAX_ENEMIES,
   MAX_WORLD_HEIGHT,
   MAX_WORLD_WIDTH,
+  MINIMAP_BG_COLOR,
+  MINIMAP_BORDER_COLOR,
+  MINIMAP_BORDER_RADIUS,
+  MINIMAP_ENEMY_COLOR,
+  MINIMAP_ENEMY_SIZE,
+  MINIMAP_PADDING,
+  MINIMAP_PLAYER_COLOR,
+  MINIMAP_PLAYER_SIZE,
+  MINIMAP_SIZE,
   NO_SPAWN_ENEMY_AREA_SIZE,
   PLAYER_ATTACK_COOLDOWN,
   PLAYER_ATTACK_FRAME,
@@ -44,7 +53,8 @@ import {
   distantBetween,
   roundRect,
   spriteCenterCoordinate,
-  worldToScreenCoordinate,
+  subtractPosition,
+  worldToMinimap,
 } from "./helper.js";
 
 const gameCanvas = document.getElementById("game");
@@ -54,37 +64,37 @@ const enemySpriteSheet = new Image();
 const playerSpriteSheet = new Image();
 const worldBg = new Image();
 
-const gameCanvasW = gameCanvas.width;
-const gameCanvasH = gameCanvas.height;
+const gameCanvasSize = {
+  width: gameCanvas.width,
+  height: gameCanvas.height,
+};
 
-const worldSize = { w: MAX_WORLD_WIDTH, h: MAX_WORLD_HEIGHT };
-
-const scaleRatio = Math.min(1, gameCanvasW / worldSize.w);
-const scaledW = Math.round(worldSize.w * scaleRatio);
-const scaledH = Math.round(worldSize.h * scaleRatio);
+const worldSize = { width: MAX_WORLD_WIDTH, height: MAX_WORLD_HEIGHT };
 
 const directionKeyToColumn = {
-  a: 1,
-  w: 2,
-  s: 3,
-  d: 4,
+  a: ANIMATION_TYPE.MOVE_LEFT,
+  w: ANIMATION_TYPE.MOVE_UP,
+  s: ANIMATION_TYPE.MOVE_DOWN,
+  d: ANIMATION_TYPE.MOVE_RIGHT,
 };
 
 const keys = {};
 
 const player = {
-  x: worldSize.w / 2, // world horizontal center
-  y: worldSize.h / 2, // world vertical center
-  speed: PLAYER_SPEED, // movement speed (px/s)
-  collisionRadius: PLAYER_COLLISION_RADIUS, //
-  facingDirectionX: 1, // control by WASD keys
-  facingDirectionY: 0, // control by WASD keys
+  x: worldSize.width / 2,
+  y: worldSize.height / 2,
+  speed: PLAYER_SPEED,
+  collisionRadius: PLAYER_COLLISION_RADIUS,
   score: 0,
   invulnerable: 0, // seconds
   alive: true,
   health: PLAYER_INIT_HEALTH,
   maxHealth: PLAYER_MAX_HEALTH,
   lastDirectionKey: null,
+  facingDirection: {
+    x: 1,
+    y: 0,
+  },
   attack: {
     cooldown: 0,
     attacking: false,
@@ -111,7 +121,7 @@ let enemySpawnTimer = 0;
 // loop timing
 let lastTime = performance.now();
 
-// offscreen world buffer act as BG (will be created in prepareWorld)
+// offscreen world buffer act as BG
 let worldBuffer = null;
 
 enemySpriteSheet.src = ENEMY_SPRITE_SHEET_URL;
@@ -120,26 +130,35 @@ worldBg.src = WORLD_BG_URL;
 
 const prepareWorld = () => {
   worldBuffer = document.createElement("canvas");
-  worldBuffer.width = worldSize.w;
-  worldBuffer.height = worldSize.h;
+  worldBuffer.width = worldSize.width;
+  worldBuffer.height = worldSize.height;
 
   const worldBufferCtx = worldBuffer.getContext("2d");
 
-  if (worldBg.width >= worldSize.w && worldBg.height >= worldSize.h) {
-    worldBufferCtx.drawImage(worldBg, 0, 0, worldSize.w, worldSize.h);
+  if (worldBg.width >= worldSize.width && worldBg.height >= worldSize.height) {
+    worldBufferCtx.drawImage(worldBg, 0, 0, worldSize.width, worldSize.height);
   } else {
     const pattern = worldBufferCtx.createPattern(worldBg, "repeat");
+
     worldBufferCtx.fillStyle = pattern;
-    worldBufferCtx.fillRect(0, 0, worldSize.w, worldSize.h);
+    worldBufferCtx.fillRect(0, 0, worldSize.width, worldSize.height);
   }
 };
 
 const getCameraView = () => {
   return {
-    x: clamp(player.x - gameCanvasW / 2, 0, worldSize.w - gameCanvasW),
-    y: clamp(player.y - gameCanvasH / 2, 0, worldSize.h - gameCanvasH),
-    w: gameCanvasW,
-    h: gameCanvasH,
+    x: clamp(
+      player.x - gameCanvasSize.width / 2,
+      0,
+      worldSize.width - gameCanvasSize.width
+    ),
+    y: clamp(
+      player.y - gameCanvasSize.height / 2,
+      0,
+      worldSize.height - gameCanvasSize.height
+    ),
+    width: gameCanvasSize.width,
+    height: gameCanvasSize.height,
   };
 };
 
@@ -150,12 +169,12 @@ const drawWorldBackground = () => {
     worldBuffer,
     camera.x,
     camera.y,
-    camera.w,
-    camera.h,
+    camera.width,
+    camera.height,
     0,
     0,
-    gameCanvasW,
-    gameCanvasH
+    gameCanvasSize.width,
+    gameCanvasSize.height
   );
 
   gameCtx.save();
@@ -167,26 +186,34 @@ const spawnEnemyAwayFromPlayer = () => {
 
   let tries = 0;
   while (tries++ < 100) {
-    const x = Math.random() * (worldSize.w - 80) + 40;
-    const y = Math.random() * (worldSize.h - 80) + 40;
-    const distanceFromPlayer = Math.hypot(x - player.x, y - player.y);
+    const generatedPOsition = {
+      x: Math.random() * (worldSize.width - 80) + 40,
+      y: Math.random() * (worldSize.height - 80) + 40,
+    };
+
+    const distanceFromPlayer = distantBetween(generatedPOsition, player);
+
     const enemy = {
-      x: x,
-      y: y,
+      x: generatedPOsition.x,
+      y: generatedPOsition.y,
       speed: ENEMY_SPEED,
       collisionRadius: ENEMY_COLLISION_RADIUS,
-      facingDirectionX: 1,
-      facingDirectionY: 0,
       alive: true,
       invulnerable: 0,
-      spawning: true,
-      spawnTimer: 0,
-      spawnDuration: 0.6,
       collidable: false,
       health: ENEMY_INIT_HEALTH,
       maxHealth: ENEMY_MAX_HEALTH,
       dying: false,
-      respawnTimer: 0,
+      spawn: {
+        spawning: true,
+        timer: 0,
+        duration: 0.6,
+        respawnTimer: 0,
+      },
+      facingDirection: {
+        x: 1,
+        y: 0,
+      },
       healthBarGradient: {
         startColor: "rgba(255,90,90,1)",
         endColor: "rgba(200,30,30,1)",
@@ -208,18 +235,114 @@ const spawnEnemyAwayFromPlayer = () => {
   }
 };
 
+const drawMiniMap = () => {
+  gameCtx.save();
+  gameCtx.setTransform(1, 0, 0, 1, 0, 0);
+
+  const minimap = {
+    x: MINIMAP_PADDING,
+    y: MINIMAP_PADDING,
+    width: MINIMAP_SIZE,
+    height: MINIMAP_SIZE,
+  };
+
+  if (!worldSize || !worldSize.width || !worldSize.height) {
+    gameCtx.restore();
+    return;
+  }
+
+  // background
+  const radius = MINIMAP_BORDER_RADIUS;
+  gameCtx.globalAlpha = 1;
+  gameCtx.fillStyle = MINIMAP_BG_COLOR;
+  gameCtx.strokeStyle = MINIMAP_BORDER_COLOR;
+  gameCtx.lineWidth = 1;
+
+  roundRect(
+    gameCtx,
+    minimap.x,
+    minimap.y,
+    minimap.width,
+    minimap.height,
+    radius,
+    true,
+    true
+  );
+
+  // enemies
+  if (Array.isArray(enemies)) {
+    gameCtx.save();
+    gameCtx.fillStyle = MINIMAP_ENEMY_COLOR;
+
+    for (let i = 0; i < enemies.length; i++) {
+      const enemy = enemies[i];
+      if (!enemy) continue;
+
+      const minimapEnemy = worldToMinimap(enemy, worldSize, minimap);
+      if (
+        minimapEnemy.x < minimap.x ||
+        minimapEnemy.x > minimap.x + minimap.width ||
+        minimapEnemy.y < minimap.y ||
+        minimapEnemy.y > minimap.y + minimap.height
+      )
+        continue;
+
+      gameCtx.beginPath();
+      gameCtx.arc(
+        minimapEnemy.x,
+        minimapEnemy.y,
+        MINIMAP_ENEMY_SIZE || 3,
+        0,
+        Math.PI * 2
+      );
+      gameCtx.fill();
+    }
+
+    gameCtx.restore();
+  }
+
+  // player
+  gameCtx.save();
+  gameCtx.fillStyle = MINIMAP_PLAYER_COLOR;
+
+  const minimapPlayer = worldToMinimap(player, worldSize, minimap);
+
+  if (
+    minimapPlayer.x >= minimap.x &&
+    minimapPlayer.x <= minimap.x + minimap.width &&
+    minimapPlayer.y >= minimap.y &&
+    minimapPlayer.y <= minimap.y + minimap.height
+  ) {
+    gameCtx.beginPath();
+    gameCtx.arc(
+      minimapPlayer.x,
+      minimapPlayer.y,
+      MINIMAP_PLAYER_SIZE,
+      0,
+      Math.PI * 2
+    );
+    gameCtx.fill();
+
+    gameCtx.beginPath();
+    gameCtx.moveTo(minimapPlayer.x, minimapPlayer.y);
+    gameCtx.stroke();
+  }
+
+  gameCtx.restore();
+};
+
 const drawHealthBar = (
   ctx,
   topLeftX,
   topLeftY,
-  spriteW,
+  spriteWidth,
   maxHealth,
   health,
   gradient,
   invulnerable
 ) => {
   const heightBarPosition = {
-    x: topLeftX + (spriteW - HEALTH_BAR_WIDTH) / 2,
+    x: topLeftX + (spriteWidth - HEALTH_BAR_WIDTH) / 2,
     y: topLeftY - HEALTH_BAR_HEIGHT * 3,
   };
 
@@ -321,34 +444,37 @@ const drawHealthBar = (
   ctx.restore();
 };
 
-const drawDamageFlash = (ctx, x, y, w, h, r, invulnerable) => {
+const drawDamageFlash = (ctx, x, y, width, height, radius, invulnerable) => {
   if (invulnerable > 0 && Math.floor(invulnerable * 8) % 2 === 0) {
     ctx.save();
     ctx.globalCompositeOperation = "source-over";
     ctx.fillStyle = "rgb(255, 0, 0)";
-    roundRect(ctx, x, y, w, h, r);
+    roundRect(ctx, x, y, width, height, radius);
     ctx.fill();
     ctx.restore();
   }
 };
 
 const drawEnemy = (enemy) => {
-  const sx = enemy.animation.typeIndex * COMMON_SPRITE_WIDTH;
-  const sy = enemy.animation.frameIndex * COMMON_SPRITE_HEIGHT;
+  const spritePosition = {
+    x: enemy.animation.typeIndex * COMMON_SPRITE_WIDTH,
+    y: enemy.animation.frameIndex * COMMON_SPRITE_HEIGHT,
+  };
 
-  const { x, y } = spriteCenterCoordinate(enemy);
+  const spriteCenterPosition = spriteCenterCoordinate(enemy);
 
-  const centerX = x + COMMON_SPRITE_WIDTH / 2;
-  const centerY = y + COMMON_SPRITE_HEIGHT * 0.82;
+  const centerX = spriteCenterPosition.x + COMMON_SPRITE_WIDTH / 2;
+  const centerY = spriteCenterPosition.y + COMMON_SPRITE_HEIGHT * 0.82;
 
   // determine sprite scale/alpha depending on spawning/dying
   let spriteScale = 1;
   let spriteAlpha = 1;
   let drawTransformed = false;
 
-  if (enemy.spawning) {
-    const spawnProgress = Math.min(1, enemy.spawnTimer / enemy.spawnDuration);
+  if (enemy.spawn.spawning) {
+    const spawnProgress = Math.min(1, enemy.spawn.timer / enemy.spawn.duration);
     const easedOut = Math.sin((spawnProgress * Math.PI) / 2);
+
     spriteScale = easedOut;
     spriteAlpha = easedOut;
     drawTransformed = true;
@@ -415,8 +541,12 @@ const drawEnemy = (enemy) => {
     gameCtx.stroke();
     gameCtx.restore();
   } else if (enemy.dying) {
-    const progress = Math.max(0, enemy.respawnTimer / enemy.spawnDuration);
+    const progress = Math.max(
+      0,
+      enemy.spawn.respawnTimer / enemy.spawn.duration
+    );
     const eased = Math.sin((progress * Math.PI) / 2);
+
     spriteScale = eased;
     spriteAlpha = eased;
     drawTransformed = true;
@@ -449,14 +579,15 @@ const drawEnemy = (enemy) => {
     gameCtx.save();
     gameCtx.globalAlpha = spriteAlpha;
 
-    const drawCenterX = x + COMMON_SPRITE_WIDTH / 2;
-    const drawCenterY = y + COMMON_SPRITE_HEIGHT / 2;
+    const drawCenterX = spriteCenterPosition.x + COMMON_SPRITE_WIDTH / 2;
+    const drawCenterY = spriteCenterPosition.y + COMMON_SPRITE_HEIGHT / 2;
+
     gameCtx.translate(drawCenterX, drawCenterY);
     gameCtx.scale(spriteScale, spriteScale);
     gameCtx.drawImage(
       enemySpriteSheet,
-      sx,
-      sy,
+      spritePosition.x,
+      spritePosition.y,
       COMMON_SPRITE_WIDTH,
       COMMON_SPRITE_HEIGHT,
       -COMMON_SPRITE_WIDTH / 2,
@@ -480,20 +611,20 @@ const drawEnemy = (enemy) => {
   } else {
     gameCtx.drawImage(
       enemySpriteSheet,
-      sx,
-      sy,
+      spritePosition.x,
+      spritePosition.y,
       COMMON_SPRITE_WIDTH,
       COMMON_SPRITE_HEIGHT,
-      x,
-      y,
+      spriteCenterPosition.x,
+      spriteCenterPosition.y,
       COMMON_SPRITE_WIDTH,
       COMMON_SPRITE_HEIGHT
     );
 
     drawHealthBar(
       gameCtx,
-      x,
-      y,
+      spriteCenterPosition.x,
+      spriteCenterPosition.y,
       COMMON_SPRITE_WIDTH,
       enemy.maxHealth,
       enemy.health,
@@ -510,27 +641,29 @@ const drawEnemies = () => {
 };
 
 const drawPlayer = () => {
-  const sx = player.animation.typeIndex * COMMON_SPRITE_WIDTH;
-  const sy = player.animation.frameIndex * COMMON_SPRITE_HEIGHT;
+  const spritePosition = {
+    x: player.animation.typeIndex * COMMON_SPRITE_WIDTH,
+    y: player.animation.frameIndex * COMMON_SPRITE_HEIGHT,
+  };
 
-  const { x, y } = spriteCenterCoordinate(player);
+  const spriteCenterPosition = spriteCenterCoordinate(player);
 
   gameCtx.drawImage(
     playerSpriteSheet,
-    sx,
-    sy,
+    spritePosition.x,
+    spritePosition.y,
     COMMON_SPRITE_WIDTH,
     COMMON_SPRITE_HEIGHT,
-    x,
-    y,
+    spriteCenterPosition.x,
+    spriteCenterPosition.y,
     COMMON_SPRITE_WIDTH,
     COMMON_SPRITE_HEIGHT
   );
 
   drawHealthBar(
     gameCtx,
-    x,
-    y,
+    spriteCenterPosition.x,
+    spriteCenterPosition.y,
     COMMON_SPRITE_WIDTH,
     player.maxHealth,
     player.health,
@@ -553,17 +686,20 @@ const updateEnemy = (enemy, deltaTime) => {
     enemy.invulnerable = Math.max(0, enemy.invulnerable - deltaTime);
   }
 
-  if (enemy.spawning) {
-    enemy.spawnTimer += deltaTime;
-    if (enemy.spawnTimer >= enemy.spawnDuration) {
-      enemy.spawning = false;
-      enemy.spawnTimer = enemy.spawnDuration;
+  if (enemy.spawn.spawning) {
+    enemy.spawn.timer += deltaTime;
+    if (enemy.spawn.timer >= enemy.spawn.duration) {
+      enemy.spawn.spawning = false;
+      enemy.spawn.timer = enemy.spawn.duration;
       enemy.collidable = true;
     }
   }
 
   if (enemy.dying) {
-    enemy.respawnTimer = Math.max(0, enemy.respawnTimer - deltaTime);
+    enemy.spawn.respawnTimer = Math.max(
+      0,
+      enemy.spawn.respawnTimer - deltaTime
+    );
   }
 };
 
@@ -572,7 +708,7 @@ const updateEnemies = (deltaTime) => {
     const enemy = enemies[i];
     updateEnemy(enemy, deltaTime);
 
-    if (enemy.dying && enemy.respawnTimer <= 0) {
+    if (enemy.dying && enemy.spawn.respawnTimer <= 0) {
       enemies.splice(i, 1);
     }
   }
@@ -600,8 +736,8 @@ const startPlayerAttack = (directionKey) => {
     directionKeyToUse = player.lastDirectionKey;
   } else {
     directionKeyToUse = getCardinalFromFacing(
-      player.facingDirectionX,
-      player.facingDirectionY
+      player.facingDirection.x,
+      player.facingDirection.y
     );
   }
   if (!directionKeyToUse) directionKeyToUse = "d";
@@ -609,8 +745,8 @@ const startPlayerAttack = (directionKey) => {
   const directionMap = { w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0] };
   const direction = directionMap[directionKeyToUse] || [1, 0];
 
-  player.facingDirectionX = direction[0];
-  player.facingDirectionY = direction[1];
+  player.facingDirection.x = direction[0];
+  player.facingDirection.y = direction[1];
 
   if (directionKeyToUse === "a") {
     player.animation.typeIndex = ANIMATION_TYPE.ATTACK_LEFT;
@@ -667,8 +803,8 @@ const updateAttack = (deltaTime) => {
     !player.attack.hitRegisteredThisSwing &&
     player.animation.frameIndex === PLAYER_ATTACK_FRAME
   ) {
-    const attackDirX = player.facingDirectionX;
-    const attackDirY = player.facingDirectionY;
+    const attackDirX = player.facingDirection.x;
+    const attackDirY = player.facingDirection.y;
 
     for (const enemy of enemies) {
       if (!enemy.collidable || enemy.dying) continue;
@@ -741,7 +877,7 @@ const updateAttack = (deltaTime) => {
 
       if (enemy.health <= 0) {
         enemy.dying = true;
-        enemy.respawnTimer = enemy.spawnDuration;
+        enemy.spawn.respawnTimer = enemy.spawn.duration;
         enemy.collidable = false;
         enemy.invulnerable = 1.0;
 
@@ -768,8 +904,8 @@ const handleEnemyCollision = (deltaTime) => {
 
         if (player.health <= 0) {
           player.health = player.maxHealth;
-          player.x = worldSize.w / 2;
-          player.y = worldSize.h / 2;
+          player.x = worldSize.width / 2;
+          player.y = worldSize.height / 2;
         }
       }
     }
@@ -910,8 +1046,8 @@ const handleMovementInput = (deltaTime) => {
     movementX /= movingLength;
     movementY /= movingLength;
 
-    player.facingDirectionX = movementX;
-    player.facingDirectionY = movementY;
+    player.facingDirection.x = movementX;
+    player.facingDirection.y = movementY;
 
     const singlePressed = dirCount === 1;
     if (singlePressed) {
@@ -924,8 +1060,8 @@ const handleMovementInput = (deltaTime) => {
   handleDash(movementX, movementY, deltaTime);
 
   // clamp player position inside world border
-  player.x = clamp(player.x, 10, worldSize.w - 10);
-  player.y = clamp(player.y, 10, worldSize.h - 10);
+  player.x = clamp(player.x, 10, worldSize.width - 10);
+  player.y = clamp(player.y, 10, worldSize.height - 10);
 
   handleAttack();
   handleEnemyCollision(deltaTime);
@@ -960,7 +1096,7 @@ const drawScore = () => {
   const textWidth = gameCtx.measureText(scoreText).width;
   const boxW = textWidth + padding * 2;
   const boxH = 36;
-  const boxX = gameCanvasW - boxW - 10;
+  const boxX = gameCanvasSize.width - boxW - 10;
   const boxY = 10;
 
   gameCtx.strokeStyle = "#fff";
@@ -974,7 +1110,7 @@ const drawScore = () => {
 const draw = () => {
   if (!worldBuffer) return;
 
-  gameCtx.clearRect(0, 0, gameCanvasW, gameCanvasH);
+  gameCtx.clearRect(0, 0, gameCanvasSize.width, gameCanvasSize.height);
 
   drawWorldBackground();
   drawEnemies();
@@ -982,6 +1118,8 @@ const draw = () => {
   drawScore();
 
   gameCtx.restore();
+
+  drawMiniMap();
 };
 
 const loop = () => {
